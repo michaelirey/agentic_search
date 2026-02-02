@@ -171,7 +171,7 @@ def cmd_stats(args):
 
 
 def cmd_sync(args):
-    """Sync folder changes with vector store."""
+    """Sync folder changes with vector store (nuke and pave approach)."""
     config = load_config()
     folder = Path(args.folder)
 
@@ -183,12 +183,12 @@ def cmd_sync(args):
     current_files = {f.name for f in folder.iterdir() if f.is_file()}
     indexed_files = set(config.get("file_names", []))
 
-    # Calculate diff
+    # Calculate diff for display
     to_add = current_files - indexed_files
     to_remove = indexed_files - current_files
     unchanged = current_files & indexed_files
 
-    # Show status
+    # Show diff
     print(f"Unchanged: {len(unchanged)} file(s)")
 
     if to_add:
@@ -207,39 +207,40 @@ def cmd_sync(args):
 
     # Prompt for confirmation
     if not getattr(args, 'yes', False):
-        response = input("\nApply changes? [y/N] ")
+        response = input("\nApply changes? (will re-upload all files) [y/N] ")
         if response.lower() != 'y':
             print("Cancelled.")
             return
 
-    file_id_map = config.get("file_id_map", {})
+    # NUKE: Delete all existing files from vector store
+    print("\nRemoving all files from vector store...")
+    for file_id in config.get("file_ids", []):
+        try:
+            client.vector_stores.files.delete(
+                vector_store_id=config["vector_store_id"],
+                file_id=file_id
+            )
+            client.files.delete(file_id)
+        except Exception:
+            pass
 
-    # Remove files
-    for name in to_remove:
-        file_id = file_id_map.get(name)
-        if file_id:
-            print(f"Removing {name}...")
-            try:
-                client.vector_stores.files.delete(
-                    vector_store_id=config["vector_store_id"],
-                    file_id=file_id
-                )
-                client.files.delete(file_id)
-            except Exception as e:
-                print(f"  Warning: {e}")
-            del file_id_map[name]
-
-    # Add files
-    for name in to_add:
-        file_path = folder / name
-        print(f"Adding {name}...")
-        with open(file_path, "rb") as f:
-            file = client.files.create(file=f, purpose="assistants")
-        client.vector_stores.files.create(
-            vector_store_id=config["vector_store_id"],
-            file_id=file.id
-        )
-        file_id_map[name] = file.id
+    # PAVE: Re-upload all files from folder
+    print("Uploading files...")
+    file_ids = []
+    file_names = []
+    file_id_map = {}
+    for file_path in sorted(folder.iterdir()):
+        if file_path.is_file():
+            print(f"  {file_path.name}")
+            with open(file_path, "rb") as f:
+                file = client.files.create(file=f, purpose="assistants")
+            client.vector_stores.files.create(
+                vector_store_id=config["vector_store_id"],
+                file_id=file.id
+            )
+            file_ids.append(file.id)
+            file_names.append(file_path.name)
+            file_id_map[file_path.name] = file.id
 
     # Wait for indexing
     print("Waiting for indexing...")
@@ -249,13 +250,13 @@ def cmd_sync(args):
             break
 
     # Update config
-    config["file_names"] = sorted(current_files)
-    config["file_ids"] = [file_id_map[name] for name in config["file_names"]]
+    config["file_ids"] = file_ids
+    config["file_names"] = file_names
     config["file_id_map"] = file_id_map
     config["folder"] = str(folder.resolve())
     save_config(config)
 
-    print(f"\nDone! Now indexed {len(config['file_names'])} document(s).")
+    print(f"\nDone! Indexed {len(file_names)} document(s).")
 
 
 def cmd_cleanup(args):
