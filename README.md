@@ -6,7 +6,8 @@ A simple RAG (Retrieval-Augmented Generation) CLI tool that lets you ask natural
 
 ```bash
 uv sync
-export OPENAI_API_KEY="your-api-key"
+cp .env.example .env
+# Edit .env with your OpenAI API key
 ```
 
 ## Usage

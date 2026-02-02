@@ -8,6 +8,10 @@ import sys
 import warnings
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # Silence OpenAI Assistants API deprecation warnings (API works until Aug 2026)
 warnings.filterwarnings("ignore", message=".*Assistants API is deprecated.*")
 
