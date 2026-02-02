@@ -5,7 +5,7 @@ A simple RAG (Retrieval-Augmented Generation) CLI tool that lets you ask natural
 ## Setup
 
 ```bash
-pip install -r requirements.txt
+uv sync
 export OPENAI_API_KEY="your-api-key"
 ```
 
@@ -14,7 +14,7 @@ export OPENAI_API_KEY="your-api-key"
 ### Initialize with documents
 
 ```bash
-python cli.py init ./your_docs
+uv run cli.py init ./your_docs
 ```
 
 Supports: PDF, DOCX, TXT, MD, HTML, JSON, CSV, and code files.
@@ -22,19 +22,19 @@ Supports: PDF, DOCX, TXT, MD, HTML, JSON, CSV, and code files.
 ### Ask questions
 
 ```bash
-python cli.py ask "What is the main topic of these documents?"
+uv run cli.py ask "What is the main topic of these documents?"
 ```
 
 ### List indexed documents
 
 ```bash
-python cli.py list
+uv run cli.py list
 ```
 
 ### Show statistics
 
 ```bash
-python cli.py stats
+uv run cli.py stats
 ```
 
 ### Sync folder changes
@@ -42,7 +42,7 @@ python cli.py stats
 When you add or remove files from your folder, sync the changes:
 
 ```bash
-python cli.py sync ./your_docs
+uv run cli.py sync ./your_docs
 ```
 
 This shows a diff of changes and prompts for confirmation before applying.
@@ -52,7 +52,7 @@ This shows a diff of changes and prompts for confirmation before applying.
 Delete all resources from OpenAI:
 
 ```bash
-python cli.py cleanup
+uv run cli.py cleanup
 ```
 
 ## How it works

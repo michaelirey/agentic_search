@@ -1,0 +1,12 @@
+[project]
+name = "agentic-search"
+version = "0.1.0"
+description = "A simple RAG CLI tool to search documents using OpenAI vector stores"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "openai",
+]
+
+[project.scripts]
+agentic-search = "cli:main"
