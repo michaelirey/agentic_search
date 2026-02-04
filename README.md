@@ -18,7 +18,13 @@ cp .env.example .env
 uv run cli.py init ./your_docs
 ```
 
-Supports: PDF, DOCX, TXT, MD, HTML, JSON, CSV, and code files.
+Documents are ingested recursively. Supports: PDF, DOCX, TXT, MD, HTML, JSON, CSV, and code files.
+
+Optional flags:
+
+```bash
+uv run cli.py init ./your_docs --index-timeout 900
+```
 
 ### Ask questions
 
@@ -48,6 +54,12 @@ uv run cli.py sync ./your_docs
 
 This shows a diff of changes and prompts for confirmation before applying.
 
+Optional flags:
+
+```bash
+uv run cli.py sync ./your_docs --index-timeout 900
+```
+
 ### Cleanup
 
 Delete all resources from OpenAI:
@@ -55,6 +67,12 @@ Delete all resources from OpenAI:
 ```bash
 uv run cli.py cleanup
 ```
+
+## Ignore rules
+
+The CLI respects `.gitignore` at the repo root (if present). You can also create a `.agentic_search_ignore` file either at the repo root or inside the target folder; if both exist, both are applied. Patterns use gitignore-style matching.
+
+`.env` and `.agentic_search_config.json` are always ignored.
 
 ## How it works
 
