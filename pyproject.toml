@@ -8,6 +8,7 @@ dependencies = [
     "openai",
     "pathspec",
     "python-dotenv",
+    "pytest",
 ]
 
 [project.scripts]
