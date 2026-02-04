@@ -5,10 +5,12 @@ import argparse
 import json
 import os
 import sys
+import time
 import warnings
 from pathlib import Path
 
 from dotenv import load_dotenv
+from pathspec import PathSpec
 
 load_dotenv()
 
@@ -19,6 +21,108 @@ from openai import OpenAI
 
 client = OpenAI()
 CONFIG_FILE = ".agentic_search_config.json"
+DEFAULT_INDEX_TIMEOUT_SECONDS = 600
+DEFAULT_POLL_INTERVAL_SECONDS = 1.0
+MAX_POLL_INTERVAL_SECONDS = 10.0
+
+
+def find_repo_root(start: Path) -> Path | None:
+    """Find the git repo root by walking up from start."""
+    for candidate in [start] + list(start.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return None
+
+
+def load_ignore_lines(path: Path) -> list[str]:
+    if not path.exists():
+        return []
+    return path.read_text().splitlines()
+
+
+def build_ignore_specs(folder: Path) -> list[tuple[PathSpec, Path]]:
+    specs: list[tuple[PathSpec, Path]] = []
+    repo_root = find_repo_root(folder)
+
+    default_patterns = [
+        ".git/",
+        ".env",
+        ".agentic_search_ignore",
+        ".agentic_search_config.json",
+    ]
+
+    specs.append((PathSpec.from_lines("gitwildmatch", default_patterns), folder))
+    if repo_root:
+        specs.append((PathSpec.from_lines("gitwildmatch", default_patterns), repo_root))
+
+    if repo_root:
+        gitignore_path = repo_root / ".gitignore"
+        gitignore_lines = load_ignore_lines(gitignore_path)
+        if gitignore_lines:
+            specs.append((PathSpec.from_lines("gitwildmatch", gitignore_lines), repo_root))
+
+        root_ignore_path = repo_root / ".agentic_search_ignore"
+        root_ignore_lines = load_ignore_lines(root_ignore_path)
+        if root_ignore_lines:
+            specs.append((PathSpec.from_lines("gitwildmatch", root_ignore_lines), repo_root))
+
+    folder_ignore_path = folder / ".agentic_search_ignore"
+    folder_ignore_lines = load_ignore_lines(folder_ignore_path)
+    if folder_ignore_lines:
+        specs.append((PathSpec.from_lines("gitwildmatch", folder_ignore_lines), folder))
+
+    return specs
+
+
+def is_ignored(path: Path, specs: list[tuple[PathSpec, Path]]) -> bool:
+    for spec, base in specs:
+        try:
+            rel_path = path.relative_to(base)
+            candidate = rel_path.as_posix()
+        except ValueError:
+            candidate = path.as_posix()
+        if spec.match_file(candidate):
+            return True
+    return False
+
+
+def iter_document_files(folder: Path) -> list[tuple[str, Path]]:
+    specs = build_ignore_specs(folder)
+    entries: list[tuple[str, Path]] = []
+    for file_path in sorted(folder.rglob("*")):
+        if not file_path.is_file():
+            continue
+        if is_ignored(file_path, specs):
+            continue
+        rel_path = file_path.relative_to(folder).as_posix()
+        entries.append((rel_path, file_path))
+    return entries
+
+
+def wait_for_indexing(vector_store_id: str, timeout_seconds: int) -> None:
+    start_time = time.monotonic()
+    poll_interval = DEFAULT_POLL_INTERVAL_SECONDS
+
+    while True:
+        vs = client.vector_stores.retrieve(vector_store_id)
+        counts = vs.file_counts
+        print(
+            "Indexing status: "
+            f"{counts.completed} completed, "
+            f"{counts.failed} failed, "
+            f"{counts.in_progress} in progress"
+        )
+
+        if counts.in_progress == 0:
+            return
+
+        elapsed = time.monotonic() - start_time
+        if elapsed >= timeout_seconds:
+            print(f"Error: Indexing timed out after {int(elapsed)}s.")
+            sys.exit(1)
+
+        time.sleep(poll_interval)
+        poll_interval = min(poll_interval * 2, MAX_POLL_INTERVAL_SECONDS)
 
 
 def load_config():
@@ -56,19 +160,19 @@ def cmd_init(args):
             yes = True
         cmd_cleanup(CleanupArgs())
 
-    # Upload all files
+    # Upload all files (recursive)
     file_ids = []
     file_names = []
-    file_id_map = {}  # name -> id mapping for sync
+    file_id_map = {}  # relative path -> id mapping for sync
 
-    for file_path in sorted(folder.iterdir()):
-        if file_path.is_file():
-            print(f"Uploading {file_path.name}...")
-            with open(file_path, "rb") as f:
-                file = client.files.create(file=f, purpose="assistants")
-            file_ids.append(file.id)
-            file_names.append(file_path.name)
-            file_id_map[file_path.name] = file.id
+    documents = iter_document_files(folder)
+    for rel_path, file_path in documents:
+        print(f"Uploading {rel_path}...")
+        with open(file_path, "rb") as f:
+            file = client.files.create(file=f, purpose="assistants")
+        file_ids.append(file.id)
+        file_names.append(rel_path)
+        file_id_map[rel_path] = file.id
 
     if not file_ids:
         print("Error: No files found in folder.")
@@ -83,10 +187,7 @@ def cmd_init(args):
 
     # Wait for indexing
     print("Waiting for files to be indexed...")
-    while True:
-        vs = client.vector_stores.retrieve(vector_store.id)
-        if vs.file_counts.in_progress == 0:
-            break
+    wait_for_indexing(vector_store.id, args.index_timeout)
 
     # Create assistant
     print("Creating assistant...")
@@ -184,7 +285,8 @@ def cmd_sync(args):
         sys.exit(1)
 
     # Get current files in folder
-    current_files = {f.name for f in folder.iterdir() if f.is_file()}
+    documents = iter_document_files(folder)
+    current_files = {rel_path for rel_path, _ in documents}
     indexed_files = set(config.get("file_names", []))
 
     # Calculate diff for display
@@ -233,25 +335,21 @@ def cmd_sync(args):
     file_ids = []
     file_names = []
     file_id_map = {}
-    for file_path in sorted(folder.iterdir()):
-        if file_path.is_file():
-            print(f"  {file_path.name}")
-            with open(file_path, "rb") as f:
-                file = client.files.create(file=f, purpose="assistants")
-            client.vector_stores.files.create(
-                vector_store_id=config["vector_store_id"],
-                file_id=file.id
-            )
-            file_ids.append(file.id)
-            file_names.append(file_path.name)
-            file_id_map[file_path.name] = file.id
+    for rel_path, file_path in sorted(documents, key=lambda item: item[0]):
+        print(f"  {rel_path}")
+        with open(file_path, "rb") as f:
+            file = client.files.create(file=f, purpose="assistants")
+        client.vector_stores.files.create(
+            vector_store_id=config["vector_store_id"],
+            file_id=file.id
+        )
+        file_ids.append(file.id)
+        file_names.append(rel_path)
+        file_id_map[rel_path] = file.id
 
     # Wait for indexing
     print("Waiting for indexing...")
-    while True:
-        vs = client.vector_stores.retrieve(config["vector_store_id"])
-        if vs.file_counts.in_progress == 0:
-            break
+    wait_for_indexing(config["vector_store_id"], args.index_timeout)
 
     # Update config
     config["file_ids"] = file_ids
@@ -310,6 +408,12 @@ def main():
     # init
     init_parser = subparsers.add_parser("init", help="Initialize with documents from a folder")
     init_parser.add_argument("folder", help="Folder containing documents")
+    init_parser.add_argument(
+        "--index-timeout",
+        type=int,
+        default=DEFAULT_INDEX_TIMEOUT_SECONDS,
+        help=f"Max seconds to wait for indexing (default: {DEFAULT_INDEX_TIMEOUT_SECONDS})",
+    )
 
     # ask
     ask_parser = subparsers.add_parser("ask", help="Ask a question about the documents")
@@ -325,6 +429,12 @@ def main():
     sync_parser = subparsers.add_parser("sync", help="Sync folder changes (add/remove files)")
     sync_parser.add_argument("folder", help="Folder to sync")
     sync_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
+    sync_parser.add_argument(
+        "--index-timeout",
+        type=int,
+        default=DEFAULT_INDEX_TIMEOUT_SECONDS,
+        help=f"Max seconds to wait for indexing (default: {DEFAULT_INDEX_TIMEOUT_SECONDS})",
+    )
 
     # cleanup
     cleanup_parser = subparsers.add_parser("cleanup", help="Delete all resources from OpenAI")
