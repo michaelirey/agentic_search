@@ -5,10 +5,12 @@ import argparse
 import json
 import os
 import sys
+import time
 import warnings
 from pathlib import Path
 
 from dotenv import load_dotenv
+import pathspec
 
 load_dotenv()
 
@@ -37,6 +39,84 @@ def save_config(config):
         json.dump(config, f, indent=2)
 
 
+def get_ignore_spec(folder):
+    """Load ignore patterns from .gitignore and .agentic_search_ignore."""
+    patterns = []
+    
+    # Always ignore config file and .env
+    patterns.append(CONFIG_FILE)
+    patterns.append(".env")
+    patterns.append(".git")
+    patterns.append(".DS_Store")
+    
+    # Load .gitignore
+    gitignore = folder / ".gitignore"
+    if gitignore.exists():
+        with open(gitignore) as f:
+            patterns.extend(f.readlines())
+            
+    # Load .agentic_search_ignore
+    as_ignore = folder / ".agentic_search_ignore"
+    if as_ignore.exists():
+        with open(as_ignore) as f:
+            patterns.extend(f.readlines())
+            
+    # Also check repo root if different from folder
+    repo_root = Path.cwd()
+    if repo_root != folder:
+        root_ignore = repo_root / ".agentic_search_ignore"
+        if root_ignore.exists():
+            with open(root_ignore) as f:
+                patterns.extend(f.readlines())
+
+    return pathspec.PathSpec.from_lines("gitwildmatch", patterns)
+
+
+def collect_files(folder, spec):
+    """recursively collect files, respecting ignore rules."""
+    files = []
+    for root, dirs, filenames in os.walk(folder):
+        root_path = Path(root)
+        
+        # Filter directories to prevent recursion into ignored dirs
+        dirs[:] = [
+            d for d in dirs 
+            if not spec.match_file(str((root_path / d).relative_to(folder)))
+        ]
+        
+        for filename in filenames:
+            file_path = root_path / filename
+            rel_path = file_path.relative_to(folder)
+            if not spec.match_file(str(rel_path)):
+                files.append(file_path)
+                
+    return sorted(files)
+
+
+def wait_for_indexing(vector_store_id, timeout=300):
+    """Wait for indexing to complete with progress and timeout."""
+    print("Waiting for files to be indexed...")
+    start_time = time.time()
+    
+    while True:
+        if time.time() - start_time > timeout:
+            print("\nError: Indexing timed out.")
+            return False
+            
+        vs = client.vector_stores.retrieve(vector_store_id)
+        counts = vs.file_counts
+        
+        print(f"\rProgress: {counts.completed} completed, {counts.failed} failed, {counts.in_progress} in progress", end="", flush=True)
+        
+        if counts.in_progress == 0:
+            print() # Newline
+            if counts.failed > 0:
+                print(f"Warning: {counts.failed} files failed to index.")
+            return True
+            
+        time.sleep(2)
+
+
 def cmd_init(args):
     """Initialize: upload documents and create vector store."""
     folder = Path(args.folder)
@@ -61,17 +141,28 @@ def cmd_init(args):
     file_names = []
     file_id_map = {}  # name -> id mapping for sync
 
-    for file_path in sorted(folder.iterdir()):
-        if file_path.is_file():
-            print(f"Uploading {file_path.name}...")
+    ignore_spec = get_ignore_spec(folder)
+    files_to_upload = collect_files(folder, ignore_spec)
+    
+    if not files_to_upload:
+        print("Error: No files found in folder (checked recursively, respecting ignore rules).")
+        sys.exit(1)
+
+    print(f"Found {len(files_to_upload)} files to upload.")
+
+    for file_path in files_to_upload:
+        print(f"Uploading {file_path.relative_to(folder)}...")
+        try:
             with open(file_path, "rb") as f:
                 file = client.files.create(file=f, purpose="assistants")
             file_ids.append(file.id)
-            file_names.append(file_path.name)
-            file_id_map[file_path.name] = file.id
+            file_names.append(str(file_path.relative_to(folder)))
+            file_id_map[str(file_path.relative_to(folder))] = file.id
+        except Exception as e:
+            print(f"Failed to upload {file_path.name}: {e}")
 
     if not file_ids:
-        print("Error: No files found in folder.")
+        print("Error: No files successfully uploaded.")
         sys.exit(1)
 
     # Create vector store
@@ -82,11 +173,8 @@ def cmd_init(args):
     )
 
     # Wait for indexing
-    print("Waiting for files to be indexed...")
-    while True:
-        vs = client.vector_stores.retrieve(vector_store.id)
-        if vs.file_counts.in_progress == 0:
-            break
+    if not wait_for_indexing(vector_store.id):
+        sys.exit(1)
 
     # Create assistant
     print("Creating assistant...")
@@ -184,7 +272,9 @@ def cmd_sync(args):
         sys.exit(1)
 
     # Get current files in folder
-    current_files = {f.name for f in folder.iterdir() if f.is_file()}
+    ignore_spec = get_ignore_spec(folder)
+    current_files_paths = collect_files(folder, ignore_spec)
+    current_files = {str(f.relative_to(folder)) for f in current_files_paths}
     indexed_files = set(config.get("file_names", []))
 
     # Calculate diff for display
@@ -233,9 +323,11 @@ def cmd_sync(args):
     file_ids = []
     file_names = []
     file_id_map = {}
-    for file_path in sorted(folder.iterdir()):
-        if file_path.is_file():
-            print(f"  {file_path.name}")
+    
+    for file_path in current_files_paths:
+        rel_path = str(file_path.relative_to(folder))
+        print(f"  {rel_path}")
+        try:
             with open(file_path, "rb") as f:
                 file = client.files.create(file=f, purpose="assistants")
             client.vector_stores.files.create(
@@ -243,15 +335,13 @@ def cmd_sync(args):
                 file_id=file.id
             )
             file_ids.append(file.id)
-            file_names.append(file_path.name)
-            file_id_map[file_path.name] = file.id
+            file_names.append(rel_path)
+            file_id_map[rel_path] = file.id
+        except Exception as e:
+            print(f"Failed to upload {rel_path}: {e}")
 
     # Wait for indexing
-    print("Waiting for indexing...")
-    while True:
-        vs = client.vector_stores.retrieve(config["vector_store_id"])
-        if vs.file_counts.in_progress == 0:
-            break
+    wait_for_indexing(config["vector_store_id"])
 
     # Update config
     config["file_ids"] = file_ids

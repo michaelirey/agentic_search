@@ -19,6 +19,12 @@ uv run cli.py init ./your_docs
 ```
 
 Supports: PDF, DOCX, TXT, MD, HTML, JSON, CSV, and code files.
+Ingestion is **recursive** - all files in subdirectories will be indexed.
+
+**Ignore Rules:**
+- `.gitignore` files are respected.
+- You can also add a `.agentic_search_ignore` file to the folder or the repo root to exclude specific files/patterns from indexing.
+- `.env` and `.agentic_search_config.json` are always ignored.
 
 ### Ask questions
 
