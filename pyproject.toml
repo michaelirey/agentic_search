@@ -10,5 +10,8 @@ dependencies = [
     "python-dotenv",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest"]
+
 [project.scripts]
 agentic-search = "cli:main"
