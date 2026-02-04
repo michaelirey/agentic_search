@@ -18,7 +18,9 @@ cp .env.example .env
 uv run cli.py init ./your_docs
 ```
 
-Supports: PDF, DOCX, TXT, MD, HTML, JSON, CSV, and code files.
+This recursively scans the folder and uploads all files. Supports: PDF, DOCX, TXT, MD, HTML, JSON, CSV, and code files.
+
+**Ignore rules**: Files matching patterns in `.gitignore` or `.agentic_search_ignore` (at the folder root) are automatically excluded.
 
 ### Ask questions
 
@@ -40,13 +42,13 @@ uv run cli.py stats
 
 ### Sync folder changes
 
-When you add or remove files from your folder, sync the changes:
+When you add or remove files from your folder (including nested subdirectories), sync the changes:
 
 ```bash
 uv run cli.py sync ./your_docs
 ```
 
-This shows a diff of changes and prompts for confirmation before applying.
+This recursively scans the folder, shows a diff of changes, and prompts for confirmation before applying. Uses the same ignore rules as `init`.
 
 ### Cleanup
 
@@ -58,10 +60,26 @@ uv run cli.py cleanup
 
 ## How it works
 
-1. `init` uploads your documents to OpenAI, creates a vector store, and sets up an assistant with file search capabilities.
+1. `init` recursively scans your folder (respecting ignore rules), uploads documents to OpenAI, creates a vector store, and sets up an assistant with file search capabilities.
 2. `ask` sends your question to the assistant, which searches the vector store and returns an answer.
-3. `sync` detects added/removed files and updates the vector store accordingly.
-4. Config is stored locally in `.agentic_search_config.json`.
+3. `sync` recursively scans and detects added/removed files, then updates the vector store accordingly.
+4. Config is stored locally in `.agentic_search_config.json` (automatically git-ignored).
+
+## Ignore rules
+
+Both `init` and `sync` respect ignore patterns:
+- `.gitignore` - Standard git ignore patterns
+- `.agentic_search_ignore` - Custom ignore file (same format as .gitignore)
+
+Place these files at the root of your document folder. Common patterns to ignore:
+```
+# Example .agentic_search_ignore
+*.log
+*.tmp
+node_modules/
+__pycache__/
+.DS_Store
+```
 
 ## License
 

@@ -5,9 +5,11 @@ import argparse
 import json
 import os
 import sys
+import time
 import warnings
 from pathlib import Path
 
+import pathspec
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -19,6 +21,98 @@ from openai import OpenAI
 
 client = OpenAI()
 CONFIG_FILE = ".agentic_search_config.json"
+DEFAULT_INDEX_TIMEOUT = 300  # 5 minutes
+
+
+def collect_files(folder: Path) -> list[Path]:
+    """Recursively collect files from folder, respecting ignore rules.
+
+    Respects .gitignore and .agentic_search_ignore files in the target folder.
+    """
+    folder = folder.resolve()
+
+    # Load ignore patterns
+    ignore_patterns = []
+
+    # Read .gitignore
+    gitignore_path = folder / ".gitignore"
+    if gitignore_path.exists():
+        with open(gitignore_path) as f:
+            ignore_patterns.extend(f.read().splitlines())
+
+    # Read .agentic_search_ignore
+    custom_ignore_path = folder / ".agentic_search_ignore"
+    if custom_ignore_path.exists():
+        with open(custom_ignore_path) as f:
+            ignore_patterns.extend(f.read().splitlines())
+
+    # Build pathspec (empty patterns match nothing)
+    spec = pathspec.PathSpec.from_lines('gitwildmatch', ignore_patterns) if ignore_patterns else None
+
+    # Recursively collect files
+    files = []
+    for root, dirs, filenames in os.walk(folder):
+        root_path = Path(root)
+
+        # Get relative path from folder
+        try:
+            rel_root = root_path.relative_to(folder)
+        except ValueError:
+            continue
+
+        # Filter directories (modify in place to prune search)
+        if spec:
+            dirs[:] = [d for d in dirs if not spec.match_file(str(rel_root / d) + "/")]
+
+        # Filter files
+        for filename in filenames:
+            file_path = root_path / filename
+            rel_path = file_path.relative_to(folder)
+
+            # Check if file should be ignored
+            if not spec or not spec.match_file(str(rel_path)):
+                files.append(file_path)
+
+    return sorted(files)
+
+
+def wait_for_indexing(vector_store_id: str, timeout: int = DEFAULT_INDEX_TIMEOUT) -> bool:
+    """Wait for vector store indexing to complete with progress output.
+
+    Args:
+        vector_store_id: The vector store ID to monitor
+        timeout: Maximum time to wait in seconds (default: 300)
+
+    Returns:
+        True if indexing completed successfully, False if timeout
+    """
+    print("Waiting for indexing...")
+    start_time = time.time()
+    sleep_time = 1  # Start with 1 second
+    max_sleep = 10  # Cap at 10 seconds
+
+    while True:
+        elapsed = time.time() - start_time
+        if elapsed > timeout:
+            print(f"\nTimeout after {timeout}s. Indexing may still be in progress.")
+            return False
+
+        vs = client.vector_stores.retrieve(vector_store_id)
+        completed = vs.file_counts.completed
+        failed = vs.file_counts.failed
+        in_progress = vs.file_counts.in_progress
+
+        # Show progress
+        print(f"  [{int(elapsed)}s] Completed: {completed}, Failed: {failed}, In Progress: {in_progress}")
+
+        if in_progress == 0:
+            if failed > 0:
+                print(f"\nWarning: {failed} file(s) failed to index")
+            return True
+
+        # Sleep with exponential backoff
+        time.sleep(sleep_time)
+        sleep_time = min(sleep_time * 1.5, max_sleep)
 
 
 def load_config():
@@ -56,23 +150,28 @@ def cmd_init(args):
             yes = True
         cmd_cleanup(CleanupArgs())
 
+    # Collect files recursively
+    file_paths = collect_files(folder)
+
+    if not file_paths:
+        print("Error: No files found in folder.")
+        sys.exit(1)
+
+    print(f"Found {len(file_paths)} file(s) to index.")
+
     # Upload all files
     file_ids = []
     file_names = []
-    file_id_map = {}  # name -> id mapping for sync
+    file_id_map = {}  # relative path -> id mapping for sync
 
-    for file_path in sorted(folder.iterdir()):
-        if file_path.is_file():
-            print(f"Uploading {file_path.name}...")
-            with open(file_path, "rb") as f:
-                file = client.files.create(file=f, purpose="assistants")
-            file_ids.append(file.id)
-            file_names.append(file_path.name)
-            file_id_map[file_path.name] = file.id
-
-    if not file_ids:
-        print("Error: No files found in folder.")
-        sys.exit(1)
+    for file_path in file_paths:
+        rel_path = file_path.relative_to(folder)
+        print(f"Uploading {rel_path}...")
+        with open(file_path, "rb") as f:
+            file = client.files.create(file=f, purpose="assistants")
+        file_ids.append(file.id)
+        file_names.append(str(rel_path))
+        file_id_map[str(rel_path)] = file.id
 
     # Create vector store
     print("Creating vector store...")
@@ -81,12 +180,8 @@ def cmd_init(args):
         file_ids=file_ids
     )
 
-    # Wait for indexing
-    print("Waiting for files to be indexed...")
-    while True:
-        vs = client.vector_stores.retrieve(vector_store.id)
-        if vs.file_counts.in_progress == 0:
-            break
+    # Wait for indexing with progress
+    wait_for_indexing(vector_store.id)
 
     # Create assistant
     print("Creating assistant...")
@@ -183,8 +278,9 @@ def cmd_sync(args):
         print(f"Error: Folder '{args.folder}' does not exist.")
         sys.exit(1)
 
-    # Get current files in folder
-    current_files = {f.name for f in folder.iterdir() if f.is_file()}
+    # Get current files in folder (recursively)
+    file_paths = collect_files(folder)
+    current_files = {str(f.relative_to(folder)) for f in file_paths}
     indexed_files = set(config.get("file_names", []))
 
     # Calculate diff for display
@@ -233,25 +329,21 @@ def cmd_sync(args):
     file_ids = []
     file_names = []
     file_id_map = {}
-    for file_path in sorted(folder.iterdir()):
-        if file_path.is_file():
-            print(f"  {file_path.name}")
-            with open(file_path, "rb") as f:
-                file = client.files.create(file=f, purpose="assistants")
-            client.vector_stores.files.create(
-                vector_store_id=config["vector_store_id"],
-                file_id=file.id
-            )
-            file_ids.append(file.id)
-            file_names.append(file_path.name)
-            file_id_map[file_path.name] = file.id
+    for file_path in file_paths:
+        rel_path = file_path.relative_to(folder)
+        print(f"  {rel_path}")
+        with open(file_path, "rb") as f:
+            file = client.files.create(file=f, purpose="assistants")
+        client.vector_stores.files.create(
+            vector_store_id=config["vector_store_id"],
+            file_id=file.id
+        )
+        file_ids.append(file.id)
+        file_names.append(str(rel_path))
+        file_id_map[str(rel_path)] = file.id
 
-    # Wait for indexing
-    print("Waiting for indexing...")
-    while True:
-        vs = client.vector_stores.retrieve(config["vector_store_id"])
-        if vs.file_counts.in_progress == 0:
-            break
+    # Wait for indexing with progress
+    wait_for_indexing(config["vector_store_id"])
 
     # Update config
     config["file_ids"] = file_ids
