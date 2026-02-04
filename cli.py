@@ -5,9 +5,11 @@ import argparse
 import json
 import os
 import sys
+import time
 import warnings
 from pathlib import Path
 
+import pathspec
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -19,6 +21,99 @@ from openai import OpenAI
 
 client = OpenAI()
 CONFIG_FILE = ".agentic_search_config.json"
+IGNORE_FILE = ".agentic_search_ignore"
+
+
+def load_ignore_spec(folder):
+    """Load ignore patterns from .gitignore and .agentic_search_ignore."""
+    patterns = [
+        ".git/",
+        ".env",
+        CONFIG_FILE,
+        IGNORE_FILE,
+        "__pycache__/",
+        "*.pyc",
+    ]
+
+    # Load .gitignore
+    gitignore_path = Path(".gitignore")
+    if gitignore_path.exists():
+        with open(gitignore_path) as f:
+            patterns.extend(f.readlines())
+
+    # Load .agentic_search_ignore from repo root or target folder
+    for p in [Path(IGNORE_FILE), folder / IGNORE_FILE]:
+        if p.exists():
+            with open(p) as f:
+                patterns.extend(f.readlines())
+
+    # Clean up patterns (remove empty lines and strip whitespace)
+    cleaned_patterns = [p.strip() for p in patterns if p.strip() and not p.startswith("#")]
+
+    return pathspec.PathSpec.from_lines("gitwildmatch", cleaned_patterns)
+
+
+def get_files_to_index(folder):
+    """Recursively find files in folder, respecting ignore rules."""
+    spec = load_ignore_spec(folder)
+    files = []
+    
+    cwd = Path.cwd().resolve()
+    
+    for root, dirs, filenames in os.walk(folder):
+        root_path = Path(root).resolve()
+        
+        # Filter directories in-place for os.walk to avoid traversing ignored dirs
+        filtered_dirs = []
+        for d in dirs:
+            dir_path = root_path / d
+            try:
+                rel_path = str(dir_path.relative_to(cwd))
+            except ValueError:
+                rel_path = str(dir_path)
+            
+            if not spec.match_file(rel_path + "/"):
+                filtered_dirs.append(d)
+        dirs[:] = filtered_dirs
+        
+        for filename in filenames:
+            file_path = (root_path / filename).resolve()
+            try:
+                rel_path = str(file_path.relative_to(cwd))
+            except ValueError:
+                rel_path = str(file_path)
+                
+            if not spec.match_file(rel_path):
+                files.append(file_path)
+    
+    return sorted(files)
+
+
+def wait_for_indexing(vector_store_id, timeout=600):
+    """Wait for files in the vector store to be indexed with backoff and timeout."""
+    start_time = time.time()
+    delay = 1
+    max_delay = 10
+
+    print("Waiting for files to be indexed...")
+    while True:
+        vs = client.vector_stores.retrieve(vector_store_id)
+        counts = vs.file_counts
+        
+        total = counts.completed + counts.failed + counts.in_progress
+        print(f"  Progress: {counts.completed} completed, {counts.failed} failed, {counts.in_progress} in progress (Total: {total})")
+        
+        if counts.in_progress == 0:
+            if counts.failed > 0:
+                print(f"  Warning: {counts.failed} files failed to index.")
+            break
+            
+        if time.time() - start_time > timeout:
+            print(f"  Error: Indexing timed out after {timeout} seconds.")
+            sys.exit(1)
+            
+        time.sleep(delay)
+        delay = min(delay * 1.5, max_delay)
 
 
 def load_config():
@@ -39,7 +134,7 @@ def save_config(config):
 
 def cmd_init(args):
     """Initialize: upload documents and create vector store."""
-    folder = Path(args.folder)
+    folder = Path(args.folder).resolve()
 
     if not folder.exists():
         print(f"Error: Folder '{args.folder}' does not exist.")
@@ -56,22 +151,34 @@ def cmd_init(args):
             yes = True
         cmd_cleanup(CleanupArgs())
 
+    # Find all files recursively
+    files_to_upload = get_files_to_index(folder)
+    
+    if not files_to_upload:
+        print(f"Error: No matching files found in {folder}")
+        sys.exit(1)
+
+    print(f"Found {len(files_to_upload)} files to index.")
+
     # Upload all files
     file_ids = []
-    file_names = []
-    file_id_map = {}  # name -> id mapping for sync
+    file_names = []  # These will be relative paths for clarity
+    file_id_map = {}  # relative_path -> id mapping for sync
 
-    for file_path in sorted(folder.iterdir()):
-        if file_path.is_file():
-            print(f"Uploading {file_path.name}...")
+    for file_path in files_to_upload:
+        rel_path = str(file_path.relative_to(folder))
+        print(f"Uploading {rel_path}...")
+        try:
             with open(file_path, "rb") as f:
                 file = client.files.create(file=f, purpose="assistants")
             file_ids.append(file.id)
-            file_names.append(file_path.name)
-            file_id_map[file_path.name] = file.id
+            file_names.append(rel_path)
+            file_id_map[rel_path] = file.id
+        except Exception as e:
+            print(f"  Error uploading {rel_path}: {e}")
 
     if not file_ids:
-        print("Error: No files found in folder.")
+        print("Error: Failed to upload any files.")
         sys.exit(1)
 
     # Create vector store
@@ -82,11 +189,7 @@ def cmd_init(args):
     )
 
     # Wait for indexing
-    print("Waiting for files to be indexed...")
-    while True:
-        vs = client.vector_stores.retrieve(vector_store.id)
-        if vs.file_counts.in_progress == 0:
-            break
+    wait_for_indexing(vector_store.id, timeout=args.timeout)
 
     # Create assistant
     print("Creating assistant...")
@@ -111,7 +214,7 @@ When answering:
         "file_ids": file_ids,
         "file_names": file_names,
         "file_id_map": file_id_map,
-        "folder": str(folder.resolve())
+        "folder": str(folder)
     }
     save_config(config)
 
@@ -177,14 +280,15 @@ def cmd_stats(args):
 def cmd_sync(args):
     """Sync folder changes with vector store (nuke and pave approach)."""
     config = load_config()
-    folder = Path(args.folder)
+    folder = Path(args.folder).resolve()
 
     if not folder.exists():
         print(f"Error: Folder '{args.folder}' does not exist.")
         sys.exit(1)
 
-    # Get current files in folder
-    current_files = {f.name for f in folder.iterdir() if f.is_file()}
+    # Get current files in folder recursively
+    files_to_index = get_files_to_index(folder)
+    current_files = {str(f.relative_to(folder)) for f in files_to_index}
     indexed_files = set(config.get("file_names", []))
 
     # Calculate diff for display
@@ -233,9 +337,11 @@ def cmd_sync(args):
     file_ids = []
     file_names = []
     file_id_map = {}
-    for file_path in sorted(folder.iterdir()):
-        if file_path.is_file():
-            print(f"  {file_path.name}")
+    
+    for rel_path_str in sorted(current_files):
+        file_path = folder / rel_path_str
+        print(f"  {rel_path_str}")
+        try:
             with open(file_path, "rb") as f:
                 file = client.files.create(file=f, purpose="assistants")
             client.vector_stores.files.create(
@@ -243,21 +349,19 @@ def cmd_sync(args):
                 file_id=file.id
             )
             file_ids.append(file.id)
-            file_names.append(file_path.name)
-            file_id_map[file_path.name] = file.id
+            file_names.append(rel_path_str)
+            file_id_map[rel_path_str] = file.id
+        except Exception as e:
+            print(f"  Error uploading {rel_path_str}: {e}")
 
     # Wait for indexing
-    print("Waiting for indexing...")
-    while True:
-        vs = client.vector_stores.retrieve(config["vector_store_id"])
-        if vs.file_counts.in_progress == 0:
-            break
+    wait_for_indexing(config["vector_store_id"], timeout=args.timeout)
 
     # Update config
     config["file_ids"] = file_ids
     config["file_names"] = file_names
     config["file_id_map"] = file_id_map
-    config["folder"] = str(folder.resolve())
+    config["folder"] = str(folder)
     save_config(config)
 
     print(f"\nDone! Indexed {len(file_names)} document(s).")
@@ -310,6 +414,7 @@ def main():
     # init
     init_parser = subparsers.add_parser("init", help="Initialize with documents from a folder")
     init_parser.add_argument("folder", help="Folder containing documents")
+    init_parser.add_argument("--timeout", type=int, default=600, help="Max seconds to wait for indexing (default: 600)")
 
     # ask
     ask_parser = subparsers.add_parser("ask", help="Ask a question about the documents")
@@ -325,6 +430,7 @@ def main():
     sync_parser = subparsers.add_parser("sync", help="Sync folder changes (add/remove files)")
     sync_parser.add_argument("folder", help="Folder to sync")
     sync_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
+    sync_parser.add_argument("--timeout", type=int, default=600, help="Max seconds to wait for indexing (default: 600)")
 
     # cleanup
     cleanup_parser = subparsers.add_parser("cleanup", help="Delete all resources from OpenAI")
