@@ -5,7 +5,7 @@ UV ?= uv
 
 help: ## Show available targets
 	@printf "Targets:\n"
-	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  %-14s %s\n", $1, $2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  %-14s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 install: ## Install dev dependencies (lint + test)
 	$(UV) sync --extra lint --extra test
@@ -22,4 +22,4 @@ lint: ## Run ruff lint checks
 test: ## Run pytest suite
 	$(UV) run python -m pytest -q
 
-ci: install format-check lint test ## Run format-check, lint, and test (CI parity)
+ci: install format-check lint test ## Install deps, then run format-check, lint, and test (CI parity)

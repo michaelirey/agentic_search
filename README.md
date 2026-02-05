@@ -157,6 +157,7 @@ Optional `make` targets that wrap the commands above:
 
 ```bash
 make install
+make format
 make format-check
 make lint
 make test
