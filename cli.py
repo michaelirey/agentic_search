@@ -7,6 +7,7 @@ import os
 import sys
 import time
 import warnings
+from importlib import metadata
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -27,6 +28,34 @@ def get_client() -> OpenAI:
     if _client is None:
         _client = OpenAI()
     return _client
+
+
+def _read_version_from_pyproject(pyproject_path: Path) -> str:
+    try:
+        content = pyproject_path.read_text().splitlines()
+    except OSError:
+        return "0.0.0"
+
+    in_project = False
+    for raw_line in content:
+        line = raw_line.strip()
+        if line.startswith("[") and line.endswith("]"):
+            in_project = line == "[project]"
+            continue
+        if not in_project or not line.startswith("version"):
+            continue
+        _, value = line.split("=", 1)
+        return value.strip().strip('"').strip("'")
+
+    return "0.0.0"
+
+
+def get_version() -> str:
+    try:
+        return metadata.version("agentic-search")
+    except metadata.PackageNotFoundError:
+        pyproject_path = Path(__file__).resolve().parent / "pyproject.toml"
+        return _read_version_from_pyproject(pyproject_path)
 CONFIG_FILE = ".agentic_search_config.json"
 DEFAULT_INDEX_TIMEOUT_SECONDS = 600
 DEFAULT_POLL_INTERVAL_SECONDS = 1.0
@@ -414,6 +443,11 @@ def main():
     parser = argparse.ArgumentParser(
         prog="agentic-search",
         description="Search documents using OpenAI vector stores"
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"{parser.prog} {get_version()}",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
