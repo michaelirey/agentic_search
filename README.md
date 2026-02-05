@@ -24,6 +24,12 @@ uv run cli.py ask "What is the main topic of these documents?"
 
 ## CLI usage
 
+Check version:
+
+```bash
+uv run cli.py --version
+```
+
 Initialize with documents:
 
 ```bash

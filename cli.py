@@ -9,6 +9,14 @@ import time
 import warnings
 from pathlib import Path
 
+# Try to import importlib.metadata for version detection
+try:
+    from importlib.metadata import version, PackageNotFoundError
+except ImportError:
+    # Fallback for older python or if importlib is missing (unlikely in >=3.10)
+    version = None
+    PackageNotFoundError = None
+
 from dotenv import load_dotenv
 from pathspec import PathSpec
 
@@ -20,6 +28,30 @@ warnings.filterwarnings("ignore", message=".*Assistants API is deprecated.*")
 from openai import OpenAI
 
 _client: OpenAI | None = None
+
+
+def get_project_version() -> str:
+    """Get project version from package metadata or pyproject.toml."""
+    # 1. Try installed package metadata
+    if version:
+        try:
+            return version("agentic-search")
+        except PackageNotFoundError:
+            pass
+
+    # 2. Try reading pyproject.toml
+    try:
+        pyproject_path = Path(__file__).parent / "pyproject.toml"
+        if pyproject_path.exists():
+            with open(pyproject_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.strip().startswith("version ="):
+                        # Extract version from: version = "0.1.0"
+                        return line.split("=")[1].strip().strip('"\'')
+    except Exception:
+        pass
+
+    return "unknown"
 
 
 def get_client() -> OpenAI:
@@ -415,6 +447,14 @@ def main():
         prog="agentic-search",
         description="Search documents using OpenAI vector stores"
     )
+    
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {get_project_version()}",
+        help="Show version and exit"
+    )
+
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # init
