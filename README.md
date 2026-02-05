@@ -111,6 +111,20 @@ secrets/
 3. `sync` detects added/removed files and updates the vector store accordingly.
 4. Config is stored locally in `.agentic_search_config.json`.
 
+## Testing
+
+Install dependencies including pytest:
+
+```bash
+uv sync --extra test
+```
+
+Run tests:
+
+```bash
+uv run python -m pytest -q
+```
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
