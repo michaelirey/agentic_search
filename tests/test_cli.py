@@ -3,7 +3,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from cli import find_repo_root, iter_document_files
+from pathspec import PathSpec
+
+from cli import find_repo_root, is_ignored, iter_document_files, load_ignore_lines
 
 
 def test_find_repo_root_walks_up(tmp_path: Path) -> None:
@@ -35,6 +37,20 @@ def test_iter_document_files_respects_ignores(tmp_path: Path) -> None:
 
     rel_paths = {rel for rel, _ in iter_document_files(docs)}
     assert rel_paths == {"keep.txt"}
+
+
+def test_load_ignore_lines_missing_file(tmp_path: Path) -> None:
+    assert load_ignore_lines(tmp_path / "missing.ignore") == []
+
+
+def test_is_ignored_matches_rooted_path(tmp_path: Path) -> None:
+    base = tmp_path / "repo"
+    base.mkdir()
+    target = base / "secrets.txt"
+    target.write_text("nope")
+
+    spec = PathSpec.from_lines("gitwildmatch", ["secrets.txt"])
+    assert is_ignored(target, [(spec, base)]) is True
 
 
 def test_cli_help_without_api_key() -> None:
