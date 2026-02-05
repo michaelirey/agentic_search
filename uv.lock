@@ -9,17 +9,22 @@ source = { virtual = "." }
 dependencies = [
     { name = "openai" },
     { name = "pathspec" },
-    { name = "pytest" },
     { name = "python-dotenv" },
+]
+
+[package.optional-dependencies]
+test = [
+    { name = "pytest" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "openai" },
     { name = "pathspec" },
-    { name = "pytest" },
+    { name = "pytest", marker = "extra == 'test'" },
     { name = "python-dotenv" },
 ]
+provides-extras = ["test"]
 
 [[package]]
 name = "annotated-types"

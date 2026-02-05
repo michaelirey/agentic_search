@@ -3,7 +3,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from cli import find_repo_root, iter_document_files
+from pathspec import PathSpec
+
+from cli import find_repo_root, iter_document_files, load_ignore_lines, is_ignored
 
 
 def test_find_repo_root_walks_up(tmp_path: Path) -> None:
@@ -51,3 +53,27 @@ def test_cli_help_without_api_key() -> None:
 
     assert result.returncode == 0
     assert "agentic-search" in result.stdout
+
+
+def test_load_ignore_lines(tmp_path: Path) -> None:
+    ignore_file = tmp_path / ".ignore"
+    ignore_file.write_text("*.log\n# comment\ntemp/")
+    lines = load_ignore_lines(ignore_file)
+    assert lines == ["*.log", "# comment", "temp/"]
+
+
+def test_load_ignore_lines_missing_file(tmp_path: Path) -> None:
+    assert load_ignore_lines(tmp_path / "missing") == []
+
+
+def test_is_ignored_logic() -> None:
+    # Test direct is_ignored logic without file system
+    spec = PathSpec.from_lines("gitwildmatch", ["*.secret"])
+    base = Path("/project")
+    specs = [(spec, base)]
+
+    assert is_ignored(base / "my.secret", specs) is True
+    assert is_ignored(base / "public.txt", specs) is False
+    
+    # Test relative path logic
+    assert is_ignored(base / "subdir" / "deep.secret", specs) is True
