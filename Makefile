@@ -1,3 +1,4 @@
+.DEFAULT_GOAL := help
 .PHONY: help install format format-check lint test ci
 
 help:
