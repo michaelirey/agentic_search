@@ -13,6 +13,7 @@ dependencies = [
 [project.optional-dependencies]
 test = [
     "pytest",
+    "pytest-cov>=5.0.0",
 ]
 lint = [
     "ruff",
@@ -37,6 +38,18 @@ select = [
     "B",    # flake8-bugbear
     "UP",   # pyupgrade
 ]
+
+[tool.pytest.ini_options]
+addopts = "--cov=. --cov-report=term-missing --cov-report=html --cov-fail-under=90"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["."]
+omit = ["tests/*", "htmlcov/*"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
 
 [tool.mypy]
 # Keep mypy targeting the minimum supported runtime, not the CI interpreter.
