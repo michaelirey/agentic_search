@@ -287,9 +287,12 @@ def cmd_ask(args: argparse.Namespace) -> None:
 
     if run.status == "completed":
         messages = client.beta.threads.messages.list(thread_id=thread.id)
+        if not messages.data or not messages.data[0].content:
+            print("Error: No response content received from assistant.")
+            sys.exit(1)
         content_block = messages.data[0].content[0]
         if content_block.type != "text":
-            print("Error: Unexpected response content type.")
+            print(f"Error: Unexpected response content type: {content_block.type}")
             sys.exit(1)
         print(content_block.text.value)
     else:
