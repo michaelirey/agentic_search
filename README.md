@@ -2,85 +2,53 @@
 
 A simple RAG (Retrieval-Augmented Generation) CLI tool that lets you ask natural language questions about your documents using OpenAI's vector stores.
 
-## Setup
+## Quickstart
 
-```bash
-uv sync
-cp .env.example .env
-# Edit .env with your OpenAI API key
-```
+Get up and running in less than 5 minutes.
 
-## Usage
+1.  **Install uv** (fast Python package manager):
+    ```bash
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    ```
 
-### Initialize with documents
+2.  **Setup environment**:
+    ```bash
+    cp .env.example .env
+    # Edit .env and add your OPENAI_API_KEY
+    ```
 
-```bash
-uv run cli.py init ./your_docs
-```
+3.  **Initialize with your documents**:
+    ```bash
+    uv run cli.py init ./your_docs_folder
+    ```
 
-Documents are ingested recursively. Supports: PDF, DOCX, TXT, MD, HTML, JSON, CSV, and code files.
+4.  **Ask a question**:
+    ```bash
+    uv run cli.py ask "What is the summary of project X?"
+    ```
 
-Optional flags:
+## CLI Reference
 
-```bash
-uv run cli.py init ./your_docs --index-timeout 900
-```
+Usage: `uv run cli.py <command> [args]`
 
-### Ask questions
+| Command | Description | Example |
+| :--- | :--- | :--- |
+| `init` | Uploads docs & creates vector store | `init ./docs` |
+| `ask` | Ask a question about indexed docs | `ask "How do I...?"` |
+| `list` | List currently indexed files | `list` |
+| `stats` | Show vector store usage & status | `stats` |
+| `sync` | Sync folder changes (add/remove) | `sync ./docs` |
+| `cleanup` | Delete all OpenAI resources & config | `cleanup` |
 
-```bash
-uv run cli.py ask "What is the main topic of these documents?"
-```
+## Ignoring Files
 
-### List indexed documents
+To exclude files from indexing (e.g., secrets, large binaries), you can use:
 
-```bash
-uv run cli.py list
-```
+1.  **`.gitignore`**: The CLI automatically respects your root `.gitignore`.
+2.  **`.agentic_search_ignore`**: Create this file in your repo root or target folder to add specific ignore patterns (uses gitignore syntax).
 
-### Show statistics
-
-```bash
-uv run cli.py stats
-```
-
-### Sync folder changes
-
-When you add or remove files from your folder, sync the changes:
-
-```bash
-uv run cli.py sync ./your_docs
-```
-
-This shows a diff of changes and prompts for confirmation before applying.
-
-Optional flags:
-
-```bash
-uv run cli.py sync ./your_docs --index-timeout 900
-```
-
-### Cleanup
-
-Delete all resources from OpenAI:
-
-```bash
-uv run cli.py cleanup
-```
-
-## Ignore rules
-
-The CLI respects `.gitignore` at the repo root (if present). You can also create a `.agentic_search_ignore` file either at the repo root or inside the target folder; if both exist, both are applied. Patterns use gitignore-style matching.
-
-`.env` and `.agentic_search_config.json` are always ignored.
-
-## How it works
-
-1. `init` uploads your documents to OpenAI, creates a vector store, and sets up an assistant with file search capabilities.
-2. `ask` sends your question to the assistant, which searches the vector store and returns an answer.
-3. `sync` detects added/removed files and updates the vector store accordingly.
-4. Config is stored locally in `.agentic_search_config.json`.
+**Note:** `.env` and `.agentic_search_config.json` are *always* ignored automatically to prevent leaking secrets.
 
 ## License
 
-MIT
+[MIT](LICENSE)
