@@ -88,27 +88,27 @@ def build_ignore_specs(folder: Path) -> list[tuple[PathSpec, Path]]:
         ".agentic_search_config.json",
     ]
 
-    specs.append((PathSpec.from_lines("gitwildmatch", default_patterns), folder))
+    specs.append((PathSpec.from_lines("gitignore", default_patterns), folder))
     if repo_root:
-        specs.append((PathSpec.from_lines("gitwildmatch", default_patterns), repo_root))
+        specs.append((PathSpec.from_lines("gitignore", default_patterns), repo_root))
 
     if repo_root:
         gitignore_path = repo_root / ".gitignore"
         gitignore_lines = load_ignore_lines(gitignore_path)
         if gitignore_lines:
-            spec = PathSpec.from_lines("gitwildmatch", gitignore_lines)
+            spec = PathSpec.from_lines("gitignore", gitignore_lines)
             specs.append((spec, repo_root))
 
         root_ignore_path = repo_root / ".agentic_search_ignore"
         root_ignore_lines = load_ignore_lines(root_ignore_path)
         if root_ignore_lines:
-            spec = PathSpec.from_lines("gitwildmatch", root_ignore_lines)
+            spec = PathSpec.from_lines("gitignore", root_ignore_lines)
             specs.append((spec, repo_root))
 
     folder_ignore_path = folder / ".agentic_search_ignore"
     folder_ignore_lines = load_ignore_lines(folder_ignore_path)
     if folder_ignore_lines:
-        specs.append((PathSpec.from_lines("gitwildmatch", folder_ignore_lines), folder))
+        specs.append((PathSpec.from_lines("gitignore", folder_ignore_lines), folder))
 
     return specs
 
@@ -287,8 +287,12 @@ def cmd_ask(args):
 
     if run.status == "completed":
         messages = client.beta.threads.messages.list(thread_id=thread.id)
-        answer = messages.data[0].content[0].text.value
-        print(answer)
+        content_block = messages.data[0].content[0]
+        if content_block.type == "text":
+            answer = content_block.text.value
+            print(answer)
+        else:
+            print("Error: Received non-text response.")
     else:
         print(f"Error: Run failed with status {run.status}")
         sys.exit(1)
@@ -391,8 +395,8 @@ def cmd_sync(args):
     file_id_map = {}
     for rel_path, file_path in sorted(documents, key=lambda item: item[0]):
         print(f"  {rel_path}")
-        with open(file_path, "rb") as f:
-            file = client.files.create(file=f, purpose="assistants")
+        with open(file_path, "rb") as file_stream:
+            file = client.files.create(file=file_stream, purpose="assistants")
         client.vector_stores.files.create(
             vector_store_id=config["vector_store_id"], file_id=file.id
         )
