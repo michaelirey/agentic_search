@@ -11,9 +11,22 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+lint = [
+    "ruff",
+]
 test = [
     "pytest",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"cli.py" = ["E402"]
 
 [project.scripts]
 agentic-search = "cli:main"
