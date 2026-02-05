@@ -19,7 +19,14 @@ warnings.filterwarnings("ignore", message=".*Assistants API is deprecated.*")
 
 from openai import OpenAI
 
-client = OpenAI()
+_client: OpenAI | None = None
+
+
+def get_client() -> OpenAI:
+    global _client
+    if _client is None:
+        _client = OpenAI()
+    return _client
 CONFIG_FILE = ".agentic_search_config.json"
 DEFAULT_INDEX_TIMEOUT_SECONDS = 600
 DEFAULT_POLL_INTERVAL_SECONDS = 1.0
@@ -99,7 +106,7 @@ def iter_document_files(folder: Path) -> list[tuple[str, Path]]:
     return entries
 
 
-def wait_for_indexing(vector_store_id: str, timeout_seconds: int) -> None:
+def wait_for_indexing(vector_store_id: str, timeout_seconds: int, client: OpenAI) -> None:
     start_time = time.monotonic()
     poll_interval = DEFAULT_POLL_INTERVAL_SECONDS
 
@@ -143,6 +150,7 @@ def save_config(config):
 
 def cmd_init(args):
     """Initialize: upload documents and create vector store."""
+    client = get_client()
     folder = Path(args.folder)
 
     if not folder.exists():
@@ -187,7 +195,7 @@ def cmd_init(args):
 
     # Wait for indexing
     print("Waiting for files to be indexed...")
-    wait_for_indexing(vector_store.id, args.index_timeout)
+    wait_for_indexing(vector_store.id, args.index_timeout, client)
 
     # Create assistant
     print("Creating assistant...")
@@ -221,6 +229,7 @@ When answering:
 
 def cmd_ask(args):
     """Ask a question about the indexed documents."""
+    client = get_client()
     config = load_config()
 
     doc_count = len(config.get("file_names", []))
@@ -261,6 +270,7 @@ def cmd_list(args):
 
 def cmd_stats(args):
     """Show statistics about the vector store."""
+    client = get_client()
     config = load_config()
 
     vs = client.vector_stores.retrieve(config["vector_store_id"])
@@ -277,6 +287,7 @@ def cmd_stats(args):
 
 def cmd_sync(args):
     """Sync folder changes with vector store (nuke and pave approach)."""
+    client = get_client()
     config = load_config()
     folder = Path(args.folder)
 
@@ -349,7 +360,7 @@ def cmd_sync(args):
 
     # Wait for indexing
     print("Waiting for indexing...")
-    wait_for_indexing(config["vector_store_id"], args.index_timeout)
+    wait_for_indexing(config["vector_store_id"], args.index_timeout, client)
 
     # Update config
     config["file_ids"] = file_ids
@@ -363,6 +374,7 @@ def cmd_sync(args):
 
 def cmd_cleanup(args):
     """Delete all resources from OpenAI."""
+    client = get_client()
     try:
         config = load_config()
     except SystemExit:
