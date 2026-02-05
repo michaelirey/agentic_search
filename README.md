@@ -1,78 +1,102 @@
 # Agentic Search
 
-A simple RAG (Retrieval-Augmented Generation) CLI tool that lets you ask natural language questions about your documents using OpenAI's vector stores.
+A simple RAG (Retrieval-Augmented Generation) CLI that lets you ask natural language questions about your documents using OpenAI vector stores.
 
-## Setup
+**Quickstart (under 5 minutes)**
 
 ```bash
+# 1) Install uv if you don't have it yet
+python -m pip install uv
+
+# 2) Install dependencies
 uv sync
+
+# 3) Configure your API key
 cp .env.example .env
-# Edit .env with your OpenAI API key
+# Edit .env and set OPENAI_API_KEY=...
+
+# 4) Index a folder of documents
+uv run cli.py init ./docs
+
+# 5) Ask a question
+uv run cli.py ask "What is the main topic of these documents?"
 ```
 
-## Usage
+## CLI usage
 
-### Initialize with documents
+Initialize with documents:
 
 ```bash
-uv run cli.py init ./your_docs
+uv run cli.py init ./docs
 ```
-
-Documents are ingested recursively. Supports: PDF, DOCX, TXT, MD, HTML, JSON, CSV, and code files.
 
 Optional flags:
 
 ```bash
-uv run cli.py init ./your_docs --index-timeout 900
+uv run cli.py init ./docs --index-timeout 900
 ```
 
-### Ask questions
+Ask a question:
 
 ```bash
-uv run cli.py ask "What is the main topic of these documents?"
+uv run cli.py ask "Summarize the key themes."
 ```
 
-### List indexed documents
+List indexed documents:
 
 ```bash
 uv run cli.py list
 ```
 
-### Show statistics
+Show statistics:
 
 ```bash
 uv run cli.py stats
 ```
 
-### Sync folder changes
-
-When you add or remove files from your folder, sync the changes:
+Sync folder changes (add/remove files):
 
 ```bash
-uv run cli.py sync ./your_docs
+uv run cli.py sync ./docs
 ```
-
-This shows a diff of changes and prompts for confirmation before applying.
 
 Optional flags:
 
 ```bash
-uv run cli.py sync ./your_docs --index-timeout 900
+uv run cli.py sync ./docs --index-timeout 900
+uv run cli.py sync ./docs --yes
 ```
 
-### Cleanup
-
-Delete all resources from OpenAI:
+Cleanup (delete all OpenAI resources for this project):
 
 ```bash
 uv run cli.py cleanup
 ```
 
-## Ignore rules
+Optional flags:
+
+```bash
+uv run cli.py cleanup --yes
+```
+
+## Supported documents
+
+Documents are ingested recursively. Supported file types include PDF, DOCX, TXT, MD, HTML, JSON, CSV, and common code files.
+
+## Ignore rules and secrets
 
 The CLI respects `.gitignore` at the repo root (if present). You can also create a `.agentic_search_ignore` file either at the repo root or inside the target folder; if both exist, both are applied. Patterns use gitignore-style matching.
 
 `.env` and `.agentic_search_config.json` are always ignored.
+
+To exclude secrets, keep them out of your docs folder and add patterns to `.agentic_search_ignore`. Example:
+
+```gitignore
+# Secrets and keys
+**/*.pem
+**/*.key
+secrets/
+```
 
 ## How it works
 
@@ -83,4 +107,4 @@ The CLI respects `.gitignore` at the repo root (if present). You can also create
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).
