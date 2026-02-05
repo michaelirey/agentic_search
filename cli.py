@@ -19,7 +19,17 @@ warnings.filterwarnings("ignore", message=".*Assistants API is deprecated.*")
 
 from openai import OpenAI
 
-client = OpenAI()
+_client = None
+
+
+def get_client() -> OpenAI:
+    """Lazily initialize OpenAI client."""
+    global _client
+    if _client is None:
+        _client = OpenAI()
+    return _client
+
+
 CONFIG_FILE = ".agentic_search_config.json"
 DEFAULT_INDEX_TIMEOUT_SECONDS = 600
 DEFAULT_POLL_INTERVAL_SECONDS = 1.0
@@ -104,7 +114,7 @@ def wait_for_indexing(vector_store_id: str, timeout_seconds: int) -> None:
     poll_interval = DEFAULT_POLL_INTERVAL_SECONDS
 
     while True:
-        vs = client.vector_stores.retrieve(vector_store_id)
+        vs = get_client().vector_stores.retrieve(vector_store_id)
         counts = vs.file_counts
         print(
             "Indexing status: "
@@ -169,7 +179,7 @@ def cmd_init(args):
     for rel_path, file_path in documents:
         print(f"Uploading {rel_path}...")
         with open(file_path, "rb") as f:
-            file = client.files.create(file=f, purpose="assistants")
+            file = get_client().files.create(file=f, purpose="assistants")
         file_ids.append(file.id)
         file_names.append(rel_path)
         file_id_map[rel_path] = file.id
@@ -180,7 +190,7 @@ def cmd_init(args):
 
     # Create vector store
     print("Creating vector store...")
-    vector_store = client.vector_stores.create(
+    vector_store = get_client().vector_stores.create(
         name="agentic_search_docs",
         file_ids=file_ids
     )
@@ -191,7 +201,7 @@ def cmd_init(args):
 
     # Create assistant
     print("Creating assistant...")
-    assistant = client.beta.assistants.create(
+    assistant = get_client().beta.assistants.create(
         name="Doc Search Assistant",
         model="gpt-4o",
         instructions="""You are a helpful assistant that answers questions based on the provided documents.
@@ -227,17 +237,17 @@ def cmd_ask(args):
     print(f"Searching {doc_count} document(s)...", file=sys.stderr)
 
     # Create thread and run
-    thread = client.beta.threads.create(
+    thread = get_client().beta.threads.create(
         messages=[{"role": "user", "content": args.question}]
     )
 
-    run = client.beta.threads.runs.create_and_poll(
+    run = get_client().beta.threads.runs.create_and_poll(
         thread_id=thread.id,
         assistant_id=config["assistant_id"]
     )
 
     if run.status == "completed":
-        messages = client.beta.threads.messages.list(thread_id=thread.id)
+        messages = get_client().beta.threads.messages.list(thread_id=thread.id)
         answer = messages.data[0].content[0].text.value
         print(answer)
     else:
@@ -263,7 +273,7 @@ def cmd_stats(args):
     """Show statistics about the vector store."""
     config = load_config()
 
-    vs = client.vector_stores.retrieve(config["vector_store_id"])
+    vs = get_client().vector_stores.retrieve(config["vector_store_id"])
 
     print(f"Documents:      {len(config.get('file_names', []))}")
     print(f"Vector Store:   {vs.id}")
@@ -322,11 +332,11 @@ def cmd_sync(args):
     print("\nRemoving all files from vector store...")
     for file_id in config.get("file_ids", []):
         try:
-            client.vector_stores.files.delete(
+            get_client().vector_stores.files.delete(
                 vector_store_id=config["vector_store_id"],
                 file_id=file_id
             )
-            client.files.delete(file_id)
+            get_client().files.delete(file_id)
         except Exception:
             pass
 
@@ -338,8 +348,8 @@ def cmd_sync(args):
     for rel_path, file_path in sorted(documents, key=lambda item: item[0]):
         print(f"  {rel_path}")
         with open(file_path, "rb") as f:
-            file = client.files.create(file=f, purpose="assistants")
-        client.vector_stores.files.create(
+            file = get_client().files.create(file=f, purpose="assistants")
+        get_client().vector_stores.files.create(
             vector_store_id=config["vector_store_id"],
             file_id=file.id
         )
@@ -377,20 +387,20 @@ def cmd_cleanup(args):
 
     print("Deleting assistant...")
     try:
-        client.beta.assistants.delete(config["assistant_id"])
+        get_client().beta.assistants.delete(config["assistant_id"])
     except Exception as e:
         print(f"  Warning: {e}")
 
     print("Deleting vector store...")
     try:
-        client.vector_stores.delete(config["vector_store_id"])
+        get_client().vector_stores.delete(config["vector_store_id"])
     except Exception as e:
         print(f"  Warning: {e}")
 
     print("Deleting uploaded files...")
     for fid in config.get("file_ids", []):
         try:
-            client.files.delete(fid)
+            get_client().files.delete(fid)
         except Exception:
             pass
 
