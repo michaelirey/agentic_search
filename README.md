@@ -151,6 +151,20 @@ Run linter:
 uv run ruff check .
 ```
 
+## Type checking
+
+Install the typecheck dependencies:
+
+```bash
+uv sync --extra typecheck
+```
+
+Run MyPy:
+
+```bash
+uv run mypy
+```
+
 ## Makefile shortcuts
 
 Optional `make` targets that wrap the commands above:
@@ -161,6 +175,7 @@ make format
 make format-check
 make lint
 make test
+make typecheck
 make ci
 ```
 
