@@ -64,7 +64,7 @@ jobs:
         uses: astral-sh/setup-uv@v3
 
       - name: Install dependencies
-        run: uv sync --extra typecheck
+        run: uv sync --extra typecheck --extra test
 
       - name: Run mypy
         run: uv run mypy
