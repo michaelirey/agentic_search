@@ -3,7 +3,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from cli import find_repo_root, iter_document_files
+from cli import find_repo_root, get_version, iter_document_files
 
 
 def test_find_repo_root_walks_up(tmp_path: Path) -> None:
@@ -51,3 +51,24 @@ def test_cli_help_without_api_key() -> None:
 
     assert result.returncode == 0
     assert "agentic-search" in result.stdout
+
+
+def test_cli_version_without_api_key() -> None:
+    env = os.environ.copy()
+    env.pop("OPENAI_API_KEY", None)
+
+    expected_version = get_version()
+    assert expected_version
+
+    result = subprocess.run(
+        [sys.executable, "cli.py", "--version"],
+        env=env,
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    output = result.stdout.strip()
+    assert output.startswith("agentic-search ")
+    assert output.split(" ", 1)[1] == expected_version
