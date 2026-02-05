@@ -43,7 +43,7 @@ cp .env.example .env
 ### Testing
 ```bash
 # Run all tests
-uv run pytest
+uv run python -m pytest
 ```
 
 ## Development Conventions

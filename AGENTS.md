@@ -14,7 +14,7 @@
 - `uv run cli.py ask "..."`: Query indexed documents.
 - `uv run cli.py sync ./docs`: Reconcile folder changes with the vector store.
 - `uv run cli.py cleanup --yes`: Delete remote resources and local config.
-- `uv run pytest`: Run the test suite (pytest is in the `test` optional dependency).
+- `uv run python -m pytest`: Run the test suite (pytest is in the `test` optional dependency).
 
 ## Coding Style & Naming Conventions
 - Python, 4-space indentation, standard library first, then third-party imports.
@@ -25,7 +25,7 @@
 ## Testing Guidelines
 - Framework: pytest.
 - Tests live in `tests/` and mirror public behaviors and helper utilities in `cli.py`.
-- Run all tests with `uv run pytest` before submitting changes.
+- Run all tests with `uv run python -m pytest` before submitting changes.
 
 ## Commit & Pull Request Guidelines
 - Commit messages follow a concise “Topic: summary (#NN)” pattern, e.g. `Docs: update README (#26)`.
