@@ -2,6 +2,7 @@
 """Agentic Search - CLI tool to search documents using OpenAI vector stores."""
 
 import argparse
+import importlib.metadata
 import json
 import os
 import sys
@@ -20,6 +21,11 @@ warnings.filterwarnings("ignore", message=".*Assistants API is deprecated.*")
 from openai import OpenAI
 
 _client: OpenAI | None = None
+
+try:
+    __version__ = importlib.metadata.version("agentic-search")
+except importlib.metadata.PackageNotFoundError:
+    __version__ = "0.1.0"
 
 
 def get_client() -> OpenAI:
@@ -414,6 +420,11 @@ def main():
     parser = argparse.ArgumentParser(
         prog="agentic-search",
         description="Search documents using OpenAI vector stores"
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"agentic-search {__version__}",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 

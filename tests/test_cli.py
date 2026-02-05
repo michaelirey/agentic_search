@@ -51,3 +51,23 @@ def test_cli_help_without_api_key() -> None:
 
     assert result.returncode == 0
     assert "agentic-search" in result.stdout
+
+
+def test_cli_version_without_api_key() -> None:
+    env = os.environ.copy()
+    env.pop("OPENAI_API_KEY", None)
+
+    result = subprocess.run(
+        [sys.executable, "cli.py", "--version"],
+        env=env,
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "agentic-search" in result.stdout
+    # Check that output contains a version number (non-empty)
+    parts = result.stdout.strip().split()
+    assert len(parts) >= 2
+    assert parts[1]  # version string is non-empty
