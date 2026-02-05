@@ -48,6 +48,24 @@ Ask a question:
 uv run cli.py ask "Summarize the key themes."
 ```
 
+Optional flags:
+
+```bash
+uv run cli.py ask "Summarize the key themes." --with-sources
+```
+
+Chat interactively:
+
+```bash
+uv run cli.py chat
+```
+
+Optional flags:
+
+```bash
+uv run cli.py chat --with-sources
+```
+
 List indexed documents:
 
 ```bash
