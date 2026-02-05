@@ -11,14 +11,13 @@ from importlib import metadata
 from pathlib import Path
 
 from dotenv import load_dotenv
+from openai import OpenAI
 from pathspec import PathSpec
 
 load_dotenv()
 
 # Silence OpenAI Assistants API deprecation warnings (API works until Aug 2026)
 warnings.filterwarnings("ignore", message=".*Assistants API is deprecated.*")
-
-from openai import OpenAI
 
 _client: OpenAI | None = None
 
@@ -56,6 +55,8 @@ def get_version() -> str:
     except metadata.PackageNotFoundError:
         pyproject_path = Path(__file__).resolve().parent / "pyproject.toml"
         return _read_version_from_pyproject(pyproject_path)
+
+
 CONFIG_FILE = ".agentic_search_config.json"
 DEFAULT_INDEX_TIMEOUT_SECONDS = 600
 DEFAULT_POLL_INTERVAL_SECONDS = 1.0
@@ -95,12 +96,14 @@ def build_ignore_specs(folder: Path) -> list[tuple[PathSpec, Path]]:
         gitignore_path = repo_root / ".gitignore"
         gitignore_lines = load_ignore_lines(gitignore_path)
         if gitignore_lines:
-            specs.append((PathSpec.from_lines("gitwildmatch", gitignore_lines), repo_root))
+            spec = PathSpec.from_lines("gitwildmatch", gitignore_lines)
+            specs.append((spec, repo_root))
 
         root_ignore_path = repo_root / ".agentic_search_ignore"
         root_ignore_lines = load_ignore_lines(root_ignore_path)
         if root_ignore_lines:
-            specs.append((PathSpec.from_lines("gitwildmatch", root_ignore_lines), repo_root))
+            spec = PathSpec.from_lines("gitwildmatch", root_ignore_lines)
+            specs.append((spec, repo_root))
 
     folder_ignore_path = folder / ".agentic_search_ignore"
     folder_ignore_lines = load_ignore_lines(folder_ignore_path)
@@ -135,7 +138,9 @@ def iter_document_files(folder: Path) -> list[tuple[str, Path]]:
     return entries
 
 
-def wait_for_indexing(vector_store_id: str, timeout_seconds: int, client: OpenAI) -> None:
+def wait_for_indexing(
+    vector_store_id: str, timeout_seconds: int, client: OpenAI
+) -> None:
     start_time = time.monotonic()
     poll_interval = DEFAULT_POLL_INTERVAL_SECONDS
 
@@ -188,13 +193,19 @@ def cmd_init(args):
 
     # Check if already initialized
     if os.path.exists(CONFIG_FILE):
-        response = input("Already initialized. Reinitialize? This will delete existing resources. [y/N] ")
-        if response.lower() != 'y':
+        prompt = (
+            "Already initialized. Reinitialize? "
+            "This will delete existing resources. [y/N] "
+        )
+        response = input(prompt)
+        if response.lower() != "y":
             print("Cancelled.")
             return
+
         # Cleanup existing resources (skip confirmation)
         class CleanupArgs:
             yes = True
+
         cmd_cleanup(CleanupArgs())
 
     # Upload all files (recursive)
@@ -218,8 +229,7 @@ def cmd_init(args):
     # Create vector store
     print("Creating vector store...")
     vector_store = client.vector_stores.create(
-        name="agentic_search_docs",
-        file_ids=file_ids
+        name="agentic_search_docs", file_ids=file_ids
     )
 
     # Wait for indexing
@@ -231,15 +241,17 @@ def cmd_init(args):
     assistant = client.beta.assistants.create(
         name="Doc Search Assistant",
         model="gpt-4o",
-        instructions="""You are a helpful assistant that answers questions based on the provided documents.
-
-When answering:
-- Search the uploaded documents for relevant information
-- Base your answer only on what you find in the documents
-- If the answer isn't in the documents, say so
-- Be concise and direct""",
+        instructions=(
+            "You are a helpful assistant that answers questions "
+            "based on the provided documents.\n\n"
+            "When answering:\n"
+            "- Search the uploaded documents for relevant information\n"
+            "- Base your answer only on what you find in the documents\n"
+            "- If the answer isn't in the documents, say so\n"
+            "- Be concise and direct"
+        ),
         tools=[{"type": "file_search"}],
-        tool_resources={"file_search": {"vector_store_ids": [vector_store.id]}}
+        tool_resources={"file_search": {"vector_store_ids": [vector_store.id]}},
     )
 
     # Save config
@@ -249,7 +261,7 @@ When answering:
         "file_ids": file_ids,
         "file_names": file_names,
         "file_id_map": file_id_map,
-        "folder": str(folder.resolve())
+        "folder": str(folder.resolve()),
     }
     save_config(config)
 
@@ -270,8 +282,7 @@ def cmd_ask(args):
     )
 
     run = client.beta.threads.runs.create_and_poll(
-        thread_id=thread.id,
-        assistant_id=config["assistant_id"]
+        thread_id=thread.id, assistant_id=config["assistant_id"]
     )
 
     if run.status == "completed":
@@ -308,7 +319,11 @@ def cmd_stats(args):
     print(f"Vector Store:   {vs.id}")
     print(f"Status:         {vs.status}")
     print(f"Storage:        {vs.usage_bytes:,} bytes")
-    print(f"Files:          {vs.file_counts.completed} completed, {vs.file_counts.failed} failed, {vs.file_counts.in_progress} in progress")
+    fc = vs.file_counts
+    print(
+        f"Files:          {fc.completed} completed, "
+        f"{fc.failed} failed, {fc.in_progress} in progress"
+    )
 
     if config.get("folder"):
         print(f"Source folder:  {config['folder']}")
@@ -352,9 +367,9 @@ def cmd_sync(args):
         return
 
     # Prompt for confirmation
-    if not getattr(args, 'yes', False):
+    if not getattr(args, "yes", False):
         response = input("\nApply changes? (will re-upload all files) [y/N] ")
-        if response.lower() != 'y':
+        if response.lower() != "y":
             print("Cancelled.")
             return
 
@@ -363,8 +378,7 @@ def cmd_sync(args):
     for file_id in config.get("file_ids", []):
         try:
             client.vector_stores.files.delete(
-                vector_store_id=config["vector_store_id"],
-                file_id=file_id
+                vector_store_id=config["vector_store_id"], file_id=file_id
             )
             client.files.delete(file_id)
         except Exception:
@@ -380,8 +394,7 @@ def cmd_sync(args):
         with open(file_path, "rb") as f:
             file = client.files.create(file=f, purpose="assistants")
         client.vector_stores.files.create(
-            vector_store_id=config["vector_store_id"],
-            file_id=file.id
+            vector_store_id=config["vector_store_id"], file_id=file.id
         )
         file_ids.append(file.id)
         file_names.append(rel_path)
@@ -410,9 +423,9 @@ def cmd_cleanup(args):
         print("Nothing to clean up.")
         return
 
-    if not getattr(args, 'yes', False):
+    if not getattr(args, "yes", False):
         response = input("Delete all resources? [y/N] ")
-        if response.lower() != 'y':
+        if response.lower() != "y":
             print("Cancelled.")
             return
 
@@ -441,8 +454,7 @@ def cmd_cleanup(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        prog="agentic-search",
-        description="Search documents using OpenAI vector stores"
+        prog="agentic-search", description="Search documents using OpenAI vector stores"
     )
     parser.add_argument(
         "--version",
@@ -452,13 +464,15 @@ def main():
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # init
-    init_parser = subparsers.add_parser("init", help="Initialize with documents from a folder")
+    init_parser = subparsers.add_parser(
+        "init", help="Initialize with documents from a folder"
+    )
     init_parser.add_argument("folder", help="Folder containing documents")
     init_parser.add_argument(
         "--index-timeout",
         type=int,
         default=DEFAULT_INDEX_TIMEOUT_SECONDS,
-        help=f"Max seconds to wait for indexing (default: {DEFAULT_INDEX_TIMEOUT_SECONDS})",
+        help=f"Max seconds to wait for indexing (default: {DEFAULT_INDEX_TIMEOUT_SECONDS})",  # noqa: E501
     )
 
     # ask
@@ -472,19 +486,27 @@ def main():
     subparsers.add_parser("stats", help="Show vector store statistics")
 
     # sync
-    sync_parser = subparsers.add_parser("sync", help="Sync folder changes (add/remove files)")
+    sync_parser = subparsers.add_parser(
+        "sync", help="Sync folder changes (add/remove files)"
+    )
     sync_parser.add_argument("folder", help="Folder to sync")
-    sync_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
+    sync_parser.add_argument(
+        "-y", "--yes", action="store_true", help="Skip confirmation prompt"
+    )
     sync_parser.add_argument(
         "--index-timeout",
         type=int,
         default=DEFAULT_INDEX_TIMEOUT_SECONDS,
-        help=f"Max seconds to wait for indexing (default: {DEFAULT_INDEX_TIMEOUT_SECONDS})",
+        help=f"Max seconds to wait for indexing (default: {DEFAULT_INDEX_TIMEOUT_SECONDS})",  # noqa: E501
     )
 
     # cleanup
-    cleanup_parser = subparsers.add_parser("cleanup", help="Delete all resources from OpenAI")
-    cleanup_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
+    cleanup_parser = subparsers.add_parser(
+        "cleanup", help="Delete all resources from OpenAI"
+    )
+    cleanup_parser.add_argument(
+        "-y", "--yes", action="store_true", help="Skip confirmation prompt"
+    )
 
     args = parser.parse_args()
 

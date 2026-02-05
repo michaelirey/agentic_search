@@ -125,6 +125,32 @@ Run the test suite:
 uv run python -m pytest -q
 ```
 
+## Linting
+
+Install the lint dependencies:
+
+```bash
+uv sync --extra lint
+```
+
+Check formatting:
+
+```bash
+uv run ruff format --check .
+```
+
+Auto-fix formatting:
+
+```bash
+uv run ruff format .
+```
+
+Run linter:
+
+```bash
+uv run ruff check .
+```
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
