@@ -19,8 +19,8 @@ format-check: ## Check formatting with ruff
 lint: ## Run ruff lint checks
 	$(UV) run ruff check .
 
-test: ## Run pytest suite
-	$(UV) run python -m pytest -q
+test: ## Run pytest suite with coverage
+	$(UV) run python -m pytest
 
 typecheck: ## Run mypy type checks
 	$(UV) run mypy

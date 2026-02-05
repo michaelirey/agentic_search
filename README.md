@@ -122,7 +122,13 @@ uv sync --extra test
 Run the test suite:
 
 ```bash
-uv run python -m pytest -q
+uv run python -m pytest
+```
+
+View the HTML coverage report:
+
+```bash
+python -m webbrowser htmlcov/index.html
 ```
 
 ## Linting
