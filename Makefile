@@ -19,7 +19,10 @@ format-check: ## Check formatting with ruff
 lint: ## Run ruff lint checks
 	$(UV) run ruff check .
 
+typecheck: ## Run static type checking with mypy
+	$(UV) run mypy .
+
 test: ## Run pytest suite
 	$(UV) run python -m pytest -q
 
-ci: install format-check lint test ## Install deps, then run format-check, lint, and test (CI parity)
+ci: install format-check lint typecheck test ## Install deps, then run format-check, lint, typecheck, and test (CI parity)

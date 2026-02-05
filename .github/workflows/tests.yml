@@ -29,6 +29,9 @@ jobs:
       - name: Run linter
         run: uv run ruff check .
 
+      - name: Run type checker
+        run: uv run mypy .
+
   pytest:
     runs-on: ubuntu-latest
     steps:
