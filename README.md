@@ -2,6 +2,10 @@
 
 A simple RAG (Retrieval-Augmented Generation) CLI tool that lets you ask natural language questions about your documents using OpenAI's vector stores.
 
+## Bakeoff Test
+
+This PR exists only to validate bakeoff automation.
+
 ## Setup
 
 ```bash
