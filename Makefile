@@ -20,7 +20,7 @@ lint: ## Run ruff lint checks
 	$(UV) run ruff check .
 
 typecheck: ## Run static type checking with mypy
-	$(UV) run mypy .
+	$(UV) run mypy
 
 test: ## Run pytest suite
 	$(UV) run python -m pytest -q

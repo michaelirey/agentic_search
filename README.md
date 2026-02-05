@@ -153,7 +153,7 @@ uv run ruff check .
 
 ## Type checking
 
-Install the lint dependencies:
+Install the lint dependencies (includes mypy):
 
 ```bash
 uv sync --extra lint
@@ -162,7 +162,7 @@ uv sync --extra lint
 Run type checker:
 
 ```bash
-uv run mypy .
+uv run mypy
 ```
 
 ## Makefile shortcuts

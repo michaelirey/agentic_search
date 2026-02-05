@@ -216,8 +216,8 @@ def cmd_init(args):
     documents = iter_document_files(folder)
     for rel_path, file_path in documents:
         print(f"Uploading {rel_path}...")
-        with open(file_path, "rb") as f:
-            file = client.files.create(file=f, purpose="assistants")
+        with open(file_path, "rb") as file_stream:
+            file = client.files.create(file=file_stream, purpose="assistants")
         file_ids.append(file.id)
         file_names.append(rel_path)
         file_id_map[rel_path] = file.id
@@ -287,12 +287,17 @@ def cmd_ask(args):
 
     if run.status == "completed":
         messages = client.beta.threads.messages.list(thread_id=thread.id)
+        if not messages.data or not messages.data[0].content:
+            print("Error: No content in response.")
+            sys.exit(1)
+
         content_block = messages.data[0].content[0]
         if content_block.type == "text":
             answer = content_block.text.value
             print(answer)
         else:
             print("Error: Received non-text response.")
+            sys.exit(1)
     else:
         print(f"Error: Run failed with status {run.status}")
         sys.exit(1)

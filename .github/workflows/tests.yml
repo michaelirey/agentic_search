@@ -30,7 +30,7 @@ jobs:
         run: uv run ruff check .
 
       - name: Run type checker
-        run: uv run mypy .
+        run: uv run mypy
 
   pytest:
     runs-on: ubuntu-latest
