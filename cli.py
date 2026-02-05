@@ -9,6 +9,7 @@ import time
 import warnings
 from importlib import metadata
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -166,23 +167,24 @@ def wait_for_indexing(
         poll_interval = min(poll_interval * 2, MAX_POLL_INTERVAL_SECONDS)
 
 
-def load_config():
+def load_config() -> dict[str, Any]:
     """Load config file or exit with error."""
     try:
         with open(CONFIG_FILE) as f:
-            return json.load(f)
+            result: dict[str, Any] = json.load(f)
+            return result
     except FileNotFoundError:
         print("Error: Not initialized. Run 'python cli.py init <folder>' first.")
         sys.exit(1)
 
 
-def save_config(config):
+def save_config(config: dict[str, Any]) -> None:
     """Save config to file."""
     with open(CONFIG_FILE, "w") as f:
         json.dump(config, f, indent=2)
 
 
-def cmd_init(args):
+def cmd_init(args: argparse.Namespace) -> None:
     """Initialize: upload documents and create vector store."""
     client = get_client()
     folder = Path(args.folder)
@@ -203,10 +205,8 @@ def cmd_init(args):
             return
 
         # Cleanup existing resources (skip confirmation)
-        class CleanupArgs:
-            yes = True
-
-        cmd_cleanup(CleanupArgs())
+        cleanup_args = argparse.Namespace(yes=True)
+        cmd_cleanup(cleanup_args)
 
     # Upload all files (recursive)
     file_ids = []
@@ -268,7 +268,7 @@ def cmd_init(args):
     print(f"\nDone! Indexed {len(file_ids)} documents.")
 
 
-def cmd_ask(args):
+def cmd_ask(args: argparse.Namespace) -> None:
     """Ask a question about the indexed documents."""
     client = get_client()
     config = load_config()
@@ -287,14 +287,17 @@ def cmd_ask(args):
 
     if run.status == "completed":
         messages = client.beta.threads.messages.list(thread_id=thread.id)
-        answer = messages.data[0].content[0].text.value
-        print(answer)
+        content_block = messages.data[0].content[0]
+        if content_block.type != "text":
+            print("Error: Unexpected response content type.")
+            sys.exit(1)
+        print(content_block.text.value)
     else:
         print(f"Error: Run failed with status {run.status}")
         sys.exit(1)
 
 
-def cmd_list(args):
+def cmd_list(args: argparse.Namespace) -> None:
     """List indexed documents."""
     config = load_config()
 
@@ -308,7 +311,7 @@ def cmd_list(args):
         print(f"  {i}. {name}")
 
 
-def cmd_stats(args):
+def cmd_stats(args: argparse.Namespace) -> None:
     """Show statistics about the vector store."""
     client = get_client()
     config = load_config()
@@ -329,7 +332,7 @@ def cmd_stats(args):
         print(f"Source folder:  {config['folder']}")
 
 
-def cmd_sync(args):
+def cmd_sync(args: argparse.Namespace) -> None:
     """Sync folder changes with vector store (nuke and pave approach)."""
     client = get_client()
     config = load_config()
@@ -354,13 +357,13 @@ def cmd_sync(args):
 
     if to_add:
         print(f"\nTo add ({len(to_add)}):")
-        for f in sorted(to_add):
-            print(f"  + {f}")
+        for name in sorted(to_add):
+            print(f"  + {name}")
 
     if to_remove:
         print(f"\nTo remove ({len(to_remove)}):")
-        for f in sorted(to_remove):
-            print(f"  - {f}")
+        for name in sorted(to_remove):
+            print(f"  - {name}")
 
     if not to_add and not to_remove:
         print("\nNo changes needed.")
@@ -414,7 +417,7 @@ def cmd_sync(args):
     print(f"\nDone! Indexed {len(file_names)} document(s).")
 
 
-def cmd_cleanup(args):
+def cmd_cleanup(args: argparse.Namespace) -> None:
     """Delete all resources from OpenAI."""
     client = get_client()
     try:
@@ -452,7 +455,7 @@ def cmd_cleanup(args):
     print("Cleaned up.")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         prog="agentic-search", description="Search documents using OpenAI vector stores"
     )
