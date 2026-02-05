@@ -128,7 +128,7 @@ uv run python -m pytest
 View the HTML coverage report:
 
 ```bash
-open htmlcov/index.html
+python -m webbrowser htmlcov/index.html
 ```
 
 ## Linting

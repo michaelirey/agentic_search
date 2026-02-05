@@ -248,12 +248,13 @@ def test_is_ignored_matches_pathspec(tmp_path: Path) -> None:
 
 
 def test_is_ignored_handles_non_relative_base(tmp_path: Path) -> None:
-    spec = cli.PathSpec.from_lines("gitwildmatch", ["**/hidden.txt"])
+    target = (tmp_path / "docs" / "hidden.txt").as_posix()
+    spec = cli.PathSpec.from_lines("gitwildmatch", [target])
     specs = [(spec, tmp_path / "other")]
     assert cli.is_ignored(tmp_path / "docs/hidden.txt", specs) is True
 
 
-def test_wait_for_indexing_completes(monkeypatch) -> None:
+def test_wait_for_indexing_completes() -> None:
     client = DummyClient(file_counts=DummyFileCounts(in_progress=0))
     cli.wait_for_indexing("vs_1", 5, client)
 
@@ -514,6 +515,11 @@ def test_cmd_sync_updates_config(tmp_path: Path, monkeypatch) -> None:
 
     saved = json.loads(config_path.read_text())
     assert sorted(saved["file_names"]) == ["a.txt", "b.txt"]
+    assert client.files.deleted == ["file_1", "file_2"]
+    assert set(client.vector_stores.files.deleted) == {
+        ("vs_1", "file_1"),
+        ("vs_1", "file_2"),
+    }
 
 
 def test_cmd_cleanup_handles_missing(monkeypatch, capsys) -> None:
@@ -578,6 +584,9 @@ def test_cmd_cleanup_deletes_resources(tmp_path: Path, monkeypatch) -> None:
 
     cli.cmd_cleanup(SimpleNamespace(yes=True))
     assert not config_path.exists()
+    assert client.beta.assistants.deleted == ["asst_1"]
+    assert client.vector_stores.deleted == ["vs_1"]
+    assert client.files.deleted == ["file_1", "file_2"]
 
 
 def test_cmd_cleanup_handles_delete_errors(tmp_path: Path, monkeypatch, capsys) -> None:
