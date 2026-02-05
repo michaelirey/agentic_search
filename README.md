@@ -84,3 +84,6 @@ The CLI respects `.gitignore` at the repo root (if present). You can also create
 ## License
 
 MIT
+
+## Bakeoff Test
+This PR exists only to validate bakeoff automation.
