@@ -290,7 +290,7 @@ def cmd_ask(args):
         answer = messages.data[0].content[0].text.value
         print(answer)
     else:
-        print(f"Error: Run failed with status {run.status}")
+        print(f"Error: Run failed with status {run.status}", file=sys.stderr)
         sys.exit(1)
 
 

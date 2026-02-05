@@ -18,7 +18,7 @@ lint = [
     "ruff",
 ]
 typecheck = [
-    "mypy",
+    "mypy>=1.19",
 ]
 
 [project.scripts]
@@ -39,6 +39,7 @@ select = [
 ]
 
 [tool.mypy]
+# Keep mypy targeting the minimum supported runtime, not the CI interpreter.
 python_version = "3.10"
 ignore_missing_imports = true
 warn_unused_ignores = true
