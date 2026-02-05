@@ -1,86 +1,139 @@
 # Agentic Search
 
-A simple RAG (Retrieval-Augmented Generation) CLI tool that lets you ask natural language questions about your documents using OpenAI's vector stores.
+A CLI tool for asking natural language questions about your documents using OpenAI's vector stores.
 
-## Setup
+## Quickstart
+
+1. **Install [uv](https://docs.astral.sh/uv/getting-started/installation/)** (if you don't have it):
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+
+2. **Clone and set up**:
+   ```bash
+   git clone https://github.com/michaelirey/agentic_search.git
+   cd agentic_search
+   uv sync
+   cp .env.example .env
+   # Edit .env and add your OpenAI API key
+   ```
+
+3. **Index your documents**:
+   ```bash
+   uv run cli.py init ./your_docs
+   ```
+
+4. **Ask a question**:
+   ```bash
+   uv run cli.py ask "What is the main topic of these documents?"
+   ```
+
+## CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `init <folder>` | Index documents from a folder |
+| `ask "<question>"` | Ask a question about your documents |
+| `list` | List all indexed documents |
+| `stats` | Show vector store statistics |
+| `sync <folder>` | Sync changes (add/remove files) |
+| `cleanup` | Delete all resources from OpenAI |
+
+### init
+
+Upload and index documents from a folder:
 
 ```bash
-uv sync
-cp .env.example .env
-# Edit .env with your OpenAI API key
+uv run cli.py init ./docs
+uv run cli.py init ./docs --index-timeout 900  # custom timeout (default: 600s)
 ```
 
-## Usage
+Supported formats: PDF, DOCX, TXT, MD, HTML, JSON, CSV, and code files.
 
-### Initialize with documents
+### ask
+
+Ask a question about your indexed documents:
 
 ```bash
-uv run cli.py init ./your_docs
+uv run cli.py ask "What are the key findings?"
+uv run cli.py ask "Summarize the project requirements"
 ```
 
-Documents are ingested recursively. Supports: PDF, DOCX, TXT, MD, HTML, JSON, CSV, and code files.
+### list
 
-Optional flags:
-
-```bash
-uv run cli.py init ./your_docs --index-timeout 900
-```
-
-### Ask questions
-
-```bash
-uv run cli.py ask "What is the main topic of these documents?"
-```
-
-### List indexed documents
+Show all indexed documents:
 
 ```bash
 uv run cli.py list
 ```
 
-### Show statistics
+### stats
+
+Display vector store statistics:
 
 ```bash
 uv run cli.py stats
 ```
 
-### Sync folder changes
+### sync
 
-When you add or remove files from your folder, sync the changes:
-
-```bash
-uv run cli.py sync ./your_docs
-```
-
-This shows a diff of changes and prompts for confirmation before applying.
-
-Optional flags:
+Sync folder changes with the vector store:
 
 ```bash
-uv run cli.py sync ./your_docs --index-timeout 900
+uv run cli.py sync ./docs
+uv run cli.py sync ./docs -y                   # skip confirmation
+uv run cli.py sync ./docs --index-timeout 900  # custom timeout
 ```
 
-### Cleanup
+Shows a diff of added/removed files and prompts before applying changes.
 
-Delete all resources from OpenAI:
+### cleanup
+
+Delete all OpenAI resources (assistant, vector store, files):
 
 ```bash
 uv run cli.py cleanup
+uv run cli.py cleanup -y  # skip confirmation
 ```
 
-## Ignore rules
+## Ignore Rules
 
-The CLI respects `.gitignore` at the repo root (if present). You can also create a `.agentic_search_ignore` file either at the repo root or inside the target folder; if both exist, both are applied. Patterns use gitignore-style matching.
+Control which files are indexed using ignore files with gitignore-style patterns.
 
-`.env` and `.agentic_search_config.json` are always ignored.
+### How it works
 
-## How it works
+1. `.gitignore` at the repo root is respected (if present)
+2. `.agentic_search_ignore` can be placed at the repo root or inside the target folder
+3. If both locations have `.agentic_search_ignore`, both are applied
 
-1. `init` uploads your documents to OpenAI, creates a vector store, and sets up an assistant with file search capabilities.
-2. `ask` sends your question to the assistant, which searches the vector store and returns an answer.
-3. `sync` detects added/removed files and updates the vector store accordingly.
-4. Config is stored locally in `.agentic_search_config.json`.
+### Always ignored
+
+These files are always excluded from indexing:
+- `.env`
+- `.agentic_search_config.json`
+- `.git/` directory
+
+### Example `.agentic_search_ignore`
+
+```gitignore
+# Exclude build artifacts
+build/
+dist/
+*.pyc
+
+# Exclude secrets and credentials
+*.pem
+*credentials*
+secrets/
+```
+
+## How It Works
+
+1. **init** uploads your documents to OpenAI, creates a vector store, and sets up an assistant with file search capabilities
+2. **ask** sends your question to the assistant, which searches the vector store and returns an answer
+3. **sync** detects added/removed files and updates the vector store accordingly
+4. Configuration is stored locally in `.agentic_search_config.json`
 
 ## License
 
-MIT
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
