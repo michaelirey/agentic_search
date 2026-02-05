@@ -151,6 +151,18 @@ Run linter:
 uv run ruff check .
 ```
 
+## Makefile shortcuts
+
+Optional `make` targets that wrap the commands above:
+
+```bash
+make install
+make format-check
+make lint
+make test
+make ci
+```
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
