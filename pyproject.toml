@@ -13,6 +13,7 @@ dependencies = [
 [project.optional-dependencies]
 test = [
     "pytest",
+    "pytest-cov>=5.0.0",
 ]
 lint = [
     "ruff",
@@ -23,6 +24,10 @@ typecheck = [
 
 [project.scripts]
 agentic-search = "cli:main"
+
+[tool.pytest.ini_options]
+addopts = "--cov=. --cov-report=term-missing --cov-report=html --cov-fail-under=90"
+testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 88

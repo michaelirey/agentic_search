@@ -119,10 +119,18 @@ Install the test dependencies:
 uv sync --extra test
 ```
 
-Run the test suite:
+Run the test suite with coverage:
 
 ```bash
-uv run python -m pytest -q
+uv run python -m pytest
+```
+
+View HTML coverage report:
+
+```bash
+open htmlcov/index.html  # macOS
+xdg-open htmlcov/index.html  # Linux
+start htmlcov/index.html  # Windows
 ```
 
 ## Linting
