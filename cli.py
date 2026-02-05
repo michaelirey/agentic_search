@@ -177,6 +177,88 @@ def save_config(config):
         json.dump(config, f, indent=2)
 
 
+def build_file_id_to_name_map(config: dict) -> dict[str, str]:
+    """Build a reverse map from file_id to document name."""
+    file_id_map = config.get("file_id_map", {})
+    return {file_id: name for name, file_id in file_id_map.items()}
+
+
+def extract_citations(text_block, file_id_to_name: dict[str, str]) -> tuple[str, list[dict]]:
+    """Extract citations from a text block and replace annotation markers.
+
+    Returns:
+        A tuple of (processed_text, citations_list) where:
+        - processed_text has annotation markers replaced with [1], [2], etc.
+        - citations_list contains dicts with 'number', 'file_name', 'quote', 'file_id'
+    """
+    annotations = getattr(text_block, "annotations", None)
+    if not annotations:
+        return text_block.value, []
+
+    text = text_block.value
+    citations: list[dict] = []
+    seen_files: dict[str, int] = {}  # file_id -> citation number
+    replacements: list[tuple[int, int, str]] = []  # (start, end, replacement)
+
+    for annotation in annotations:
+        if not hasattr(annotation, "file_citation"):
+            continue
+
+        file_citation = annotation.file_citation
+        file_id = file_citation.file_id
+        quote = getattr(file_citation, "quote", "") or ""
+
+        # Assign citation number (reuse if same file already cited)
+        if file_id in seen_files:
+            citation_num = seen_files[file_id]
+        else:
+            citation_num = len(seen_files) + 1
+            seen_files[file_id] = citation_num
+
+            # Get file name from map or use "Unknown"
+            file_name = file_id_to_name.get(file_id, "Unknown")
+
+            citations.append({
+                "number": citation_num,
+                "file_name": file_name,
+                "quote": quote,
+                "file_id": file_id,
+            })
+
+        # Record replacement for annotation marker
+        start_idx = annotation.start_index
+        end_idx = annotation.end_index
+        replacements.append((start_idx, end_idx, f"[{citation_num}]"))
+
+    # Apply replacements in reverse order to preserve indices
+    replacements.sort(key=lambda x: x[0], reverse=True)
+    for start_idx, end_idx, replacement in replacements:
+        text = text[:start_idx] + replacement + text[end_idx:]
+
+    return text, citations
+
+
+def format_sources(citations: list[dict], verbose: bool = False) -> str:
+    """Format the sources section for display."""
+    if not citations:
+        return ""
+
+    lines = ["\nSources:"]
+    for citation in citations:
+        num = citation["number"]
+        name = citation["file_name"]
+        if verbose and citation["quote"]:
+            lines.append(f"[{num}] {name}")
+            # Indent the quote
+            quote = citation["quote"]
+            lines.append(f'    "{quote}"')
+            lines.append("")  # blank line between verbose entries
+        else:
+            lines.append(f"[{num}] {name}")
+
+    return "\n".join(lines)
+
+
 def cmd_init(args):
     """Initialize: upload documents and create vector store."""
     client = get_client()
@@ -276,8 +358,19 @@ def cmd_ask(args):
 
     if run.status == "completed":
         messages = client.beta.threads.messages.list(thread_id=thread.id)
-        answer = messages.data[0].content[0].text.value
+        text_block = messages.data[0].content[0].text
+
+        # Build file_id -> name mapping and extract citations
+        file_id_to_name = build_file_id_to_name_map(config)
+        answer, citations = extract_citations(text_block, file_id_to_name)
+
         print(answer)
+
+        # Print sources if any citations were found
+        if citations:
+            verbose = getattr(args, "with_sources", False)
+            sources_output = format_sources(citations, verbose=verbose)
+            print(sources_output)
     else:
         print(f"Error: Run failed with status {run.status}")
         sys.exit(1)
@@ -464,6 +557,11 @@ def main():
     # ask
     ask_parser = subparsers.add_parser("ask", help="Ask a question about the documents")
     ask_parser.add_argument("question", help="Question to ask")
+    ask_parser.add_argument(
+        "--with-sources",
+        action="store_true",
+        help="Show detailed source quotes with citations",
+    )
 
     # list
     subparsers.add_parser("list", help="List indexed documents")
