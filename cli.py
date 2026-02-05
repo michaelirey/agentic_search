@@ -9,6 +9,7 @@ import time
 import warnings
 from importlib import metadata
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 from pathspec import PathSpec
@@ -56,6 +57,72 @@ def get_version() -> str:
     except metadata.PackageNotFoundError:
         pyproject_path = Path(__file__).resolve().parent / "pyproject.toml"
         return _read_version_from_pyproject(pyproject_path)
+
+
+def process_citations(
+    text: str,
+    annotations: list[Any],
+    file_id_map: dict[str, str]
+) -> tuple[str, list[dict[str, Any]]]:
+    """
+    Extract citations from text annotations and format the text.
+    
+    Args:
+        text: The original response text.
+        annotations: List of annotation objects from OpenAI.
+        file_id_map: Mapping of file_id -> filename.
+        
+    Returns:
+        A tuple of (formatted_text, sources_list).
+    """
+    if not annotations:
+        return text, []
+
+    # Map file_id -> {index, filename, quotes}
+    source_map: dict[str, dict[str, Any]] = {}
+    next_index = 1
+    
+    # Sort annotations by start_index to assign IDs in order of appearance
+    in_order_annotations = sorted(annotations, key=lambda a: a.start_index)
+    
+    citation_replacements = [] # (start, end, replacement_text)
+    
+    for ann in in_order_annotations:
+        file_citation = getattr(ann, "file_citation", None)
+        if not file_citation:
+            continue
+            
+        file_id = file_citation.file_id
+        quote = getattr(file_citation, "quote", "")
+        
+        if file_id in source_map:
+            index = source_map[file_id]["id"]
+            source_map[file_id]["quotes"].append(quote)
+        else:
+            index = next_index
+            filename = file_id_map.get(file_id, "Unknown")
+            source_map[file_id] = {
+                "id": index,
+                "filename": filename,
+                "quotes": [quote]
+            }
+            next_index += 1
+            
+        citation_replacements.append((ann.start_index, ann.end_index, f"[{index}]"))
+
+    # Apply replacements in reverse order to preserve indices
+    citation_replacements.sort(key=lambda x: x[0], reverse=True)
+    
+    formatted_text = text
+    for start, end, replacement in citation_replacements:
+        formatted_text = formatted_text[:start] + replacement + formatted_text[end:]
+        
+    # Prepare sources list sorted by id
+    sources = sorted(source_map.values(), key=lambda x: x["id"])
+    
+    return formatted_text, sources
+
+
 CONFIG_FILE = ".agentic_search_config.json"
 DEFAULT_INDEX_TIMEOUT_SECONDS = 600
 DEFAULT_POLL_INTERVAL_SECONDS = 1.0
@@ -276,8 +343,26 @@ def cmd_ask(args):
 
     if run.status == "completed":
         messages = client.beta.threads.messages.list(thread_id=thread.id)
-        answer = messages.data[0].content[0].text.value
-        print(answer)
+        message_content = messages.data[0].content[0].text
+        answer = message_content.value
+        annotations = message_content.annotations
+
+        # Build file_id_map (id -> rel_path)
+        file_id_to_name = {v: k for k, v in config.get("file_id_map", {}).items()}
+
+        formatted_answer, sources = process_citations(answer, annotations, file_id_to_name)
+
+        print(formatted_answer)
+
+        if sources:
+            print("\nSources:")
+            for source in sources:
+                print(f"[{source['id']}] {source['filename']}")
+                if args.with_sources:
+                    for quote in source["quotes"]:
+                        print(f"    \"{quote}\"")
+                    if source != sources[-1]:
+                         print()
     else:
         print(f"Error: Run failed with status {run.status}")
         sys.exit(1)
@@ -464,6 +549,7 @@ def main():
     # ask
     ask_parser = subparsers.add_parser("ask", help="Ask a question about the documents")
     ask_parser.add_argument("question", help="Question to ask")
+    ask_parser.add_argument("--with-sources", action="store_true", help="Display full source quotes")
 
     # list
     subparsers.add_parser("list", help="List indexed documents")
