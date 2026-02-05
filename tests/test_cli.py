@@ -3,7 +3,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from cli import find_repo_root, get_version, iter_document_files
+from cli import _format_answer_with_sources, find_repo_root, get_version, iter_document_files
 
 
 def test_find_repo_root_walks_up(tmp_path: Path) -> None:
@@ -72,3 +72,88 @@ def test_cli_version_without_api_key() -> None:
     output = result.stdout.strip()
     assert output.startswith("agentic-search ")
     assert output.split(" ", 1)[1] == expected_version
+
+
+def test_format_answer_with_sources_replaces_markers() -> None:
+    text = "Answer with cite [source]."
+    annotations = [
+        {
+            "text": "[source]",
+            "type": "file_citation",
+            "file_id": "file_abc",
+            "quote": "quoted text",
+        }
+    ]
+    formatted, sources = _format_answer_with_sources(
+        text,
+        annotations,
+        {"file_abc": "doc.md"},
+        with_sources=False,
+    )
+
+    assert formatted == "Answer with cite [1]."
+    assert sources == ["Sources:", "[1] doc.md"]
+
+
+def test_format_answer_with_sources_includes_quotes() -> None:
+    text = "Answer with cite [source]."
+    annotations = [
+        {
+            "text": "[source]",
+            "type": "file_citation",
+            "file_id": "file_abc",
+            "quote": "quoted text",
+        }
+    ]
+    formatted, sources = _format_answer_with_sources(
+        text,
+        annotations,
+        {"file_abc": "doc.md"},
+        with_sources=True,
+    )
+
+    assert formatted == "Answer with cite [1]."
+    assert sources == ["Sources:", "[1] doc.md", '    "quoted text"']
+
+
+def test_format_answer_with_sources_handles_unknown_and_empty_quote() -> None:
+    text = "Answer with cite [source]."
+    annotations = [
+        {
+            "text": "[source]",
+            "type": "file_citation",
+            "file_id": "file_missing",
+            "quote": "",
+        }
+    ]
+    formatted, sources = _format_answer_with_sources(
+        text,
+        annotations,
+        {},
+        with_sources=True,
+    )
+
+    assert formatted == "Answer with cite [1]."
+    assert sources == ["Sources:", "[1] Unknown"]
+
+
+def test_format_answer_with_sources_uses_start_end_indices() -> None:
+    text = "Answer with citeX."
+    annotations = [
+        {
+            "type": "file_citation",
+            "file_id": "file_abc",
+            "quote": "quoted text",
+            "start_index": 16,
+            "end_index": 17,
+        }
+    ]
+    formatted, sources = _format_answer_with_sources(
+        text,
+        annotations,
+        {"file_abc": "doc.md"},
+        with_sources=False,
+    )
+
+    assert formatted == "Answer with cite[1]."
+    assert sources == ["Sources:", "[1] doc.md"]
