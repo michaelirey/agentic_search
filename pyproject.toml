@@ -40,11 +40,11 @@ select = [
 ]
 
 [tool.pytest.ini_options]
-addopts = "--cov=. --cov-report=term-missing --cov-report=html --cov-fail-under=90"
+addopts = "--cov=cli --cov-report=term-missing --cov-report=html --cov-fail-under=90"
 testpaths = ["tests"]
 
 [tool.coverage.run]
-source = ["."]
+source = ["cli"]
 omit = ["tests/*", "htmlcov/*"]
 
 [tool.coverage.report]
