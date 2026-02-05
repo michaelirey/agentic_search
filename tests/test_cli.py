@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import sys
 import argparse
 from pathlib import Path
@@ -58,12 +59,33 @@ def test_get_version() -> None:
     assert isinstance(v, str)
     assert len(v) > 0
 
+
+def test_cli_help_without_api_key() -> None:
+    """Ensure CLI help works without API key (imports don't crash)."""
+    env = os.environ.copy()
+    env.pop("OPENAI_API_KEY", None)
+
+    result = subprocess.run(
+        [sys.executable, "cli.py", "--help"],
+        env=env,
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "agentic-search" in result.stdout
+
+
 # --- New Tests for CLI Commands ---
 
 @pytest.fixture(autouse=True)
 def mock_openai_env():
     with patch.dict(os.environ, {"OPENAI_API_KEY": "dummy"}):
         yield
+    # Teardown: Reset singleton client to avoid leakage across tests
+    import cli
+    cli._client = None
 
 @pytest.fixture
 def mock_client():
@@ -73,7 +95,14 @@ def mock_client():
         yield client
 
 @pytest.fixture
-def mock_config(tmp_path):
+def mock_config_path(tmp_path):
+    """Isolate CONFIG_FILE to a temp path to prevent deleting real config."""
+    config_path = tmp_path / ".agentic_search_config.json"
+    with patch("cli.CONFIG_FILE", str(config_path)):
+        yield config_path
+
+@pytest.fixture
+def mock_config(mock_config_path):
     # Mock load_config and save_config via file operations or directly patching
     config = {
         "assistant_id": "asst_123",
@@ -91,7 +120,7 @@ def mock_save_config():
     with patch("cli.save_config") as mock:
         yield mock
 
-def test_cmd_init(tmp_path, mock_client, mock_save_config):
+def test_cmd_init(tmp_path, mock_client, mock_save_config, mock_config_path):
     # Setup
     docs_dir = tmp_path / "docs"
     docs_dir.mkdir()
@@ -130,7 +159,7 @@ def test_cmd_init(tmp_path, mock_client, mock_save_config):
     assert saved_conf["vector_store_id"] == "vs_1"
     assert "test.txt" in saved_conf["file_names"]
 
-def test_cmd_init_errors(mock_client, tmp_path):
+def test_cmd_init_errors(mock_client, tmp_path, mock_config_path):
     # Folder not exists
     args = argparse.Namespace(folder="nonexistent", index_timeout=10, command="init")
     with pytest.raises(SystemExit):
@@ -143,14 +172,16 @@ def test_cmd_init_errors(mock_client, tmp_path):
     with pytest.raises(SystemExit):
          cmd_init(args)
 
-def test_cmd_init_already_initialized_no(mock_client, tmp_path):
+def test_cmd_init_already_initialized_no(mock_client, tmp_path, mock_config_path):
     # Already initialized, say no
     docs_dir = tmp_path / "docs"
     docs_dir.mkdir()
     args = argparse.Namespace(folder=str(docs_dir), index_timeout=10, command="init")
     
-    with patch("os.path.exists", return_value=True), \
-         patch("builtins.input", return_value="n"):
+    # Create the config file to simulate existing initialization
+    mock_config_path.write_text("{}")
+
+    with patch("builtins.input", return_value="n"):
          cmd_init(args)
          # Should return without doing anything
          mock_client.files.create.assert_not_called()
@@ -214,18 +245,21 @@ def test_cmd_stats(mock_client, mock_config, capsys):
     assert "vs_123" in captured.out
     assert "1,024 bytes" in captured.out
 
-def test_cmd_cleanup(mock_client, mock_config):
+def test_cmd_cleanup(mock_client, mock_config, mock_config_path):
     args = argparse.Namespace(yes=True, command="cleanup")
     
-    with patch("os.remove") as mock_remove:
-        cmd_cleanup(args)
-        
-        mock_client.beta.assistants.delete.assert_called_with("asst_123")
-        mock_client.vector_stores.delete.assert_called_with("vs_123")
-        mock_client.files.delete.assert_called_with("file_123")
-        mock_remove.assert_called_with(CONFIG_FILE)
+    # Create config file so os.remove has something to remove
+    mock_config_path.write_text("{}")
 
-def test_cmd_cleanup_not_initialized():
+    cmd_cleanup(args)
+    
+    mock_client.beta.assistants.delete.assert_called_with("asst_123")
+    mock_client.vector_stores.delete.assert_called_with("vs_123")
+    mock_client.files.delete.assert_called_with("file_123")
+    assert not mock_config_path.exists()
+
+def test_cmd_cleanup_not_initialized(mock_client):
+     # mock_client is unused by code but prevents leak if code called get_client
      with patch("cli.load_config", side_effect=SystemExit), \
           patch("builtins.print") as mock_print:
          cmd_cleanup(argparse.Namespace(yes=True, command="cleanup"))
@@ -243,6 +277,9 @@ def test_cmd_sync_no_changes(mock_client, mock_config, tmp_path, capsys):
     docs_dir.mkdir()
     (docs_dir / "doc.txt").write_text("content")
     
+    # Update mock config to match path
+    mock_config["folder"] = str(docs_dir)
+
     args = argparse.Namespace(folder=str(docs_dir), yes=True, command="sync", index_timeout=10)
     
     cmd_sync(args)
@@ -262,6 +299,9 @@ def test_cmd_sync_with_changes(mock_client, mock_config, mock_save_config, tmp_p
     (docs_dir / "doc.txt").write_text("content")
     (docs_dir / "new.txt").write_text("new content")
     
+    # Update mock config to match path
+    mock_config["folder"] = str(docs_dir)
+
     args = argparse.Namespace(folder=str(docs_dir), yes=True, command="sync", index_timeout=10)
     
     # Mock responses
