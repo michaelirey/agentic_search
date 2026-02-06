@@ -1,14 +1,14 @@
 SHELL := /bin/sh
 UV ?= uv
 
-.PHONY: help install format format-check lint test typecheck ci
+.PHONY: help install format format-check lint test typecheck security ci
 
 help: ## Show available targets
 	@printf "Targets:\n"
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  %-14s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-install: ## Install dev dependencies (lint + test + typecheck)
-	$(UV) sync --extra lint --extra test --extra typecheck
+install: ## Install dev dependencies (lint + test + typecheck + security)
+	$(UV) sync --extra lint --extra test --extra typecheck --extra security
 
 format: ## Auto-format code with ruff
 	$(UV) run ruff format .
@@ -25,4 +25,7 @@ test: ## Run pytest suite with coverage
 typecheck: ## Run mypy type checks
 	$(UV) run mypy
 
-ci: install format-check lint test typecheck ## Install deps, then run format-check, lint, test, and typecheck (CI parity)
+security: ## Run bandit security scan (medium+ severity)
+	$(UV) run bandit -c pyproject.toml -r . -ll
+
+ci: install format-check lint test typecheck security ## Install deps, then run all checks (CI parity)
