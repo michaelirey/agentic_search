@@ -21,9 +21,17 @@ lint = [
 typecheck = [
     "mypy>=1.19",
 ]
+security = [
+    "bandit[toml]>=1.7.0",
+]
 
 [project.scripts]
 agentic-search = "cli:main"
+
+[tool.bandit]
+targets = ["."]
+exclude_dirs = ["tests", ".venv"]
+skips = []
 
 [tool.ruff]
 line-length = 88
