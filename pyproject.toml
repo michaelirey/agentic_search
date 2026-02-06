@@ -5,6 +5,7 @@ description = "A simple RAG CLI tool to search documents using OpenAI vector sto
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "bandit[dev,toml]>=1.7.0",
     "openai",
     "pathspec",
     "python-dotenv",
